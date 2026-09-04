@@ -1,0 +1,401 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<title>QAQC Paneles</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#F2701D">
+<link rel="icon" href="icons/icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="QAQC Paneles">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+
+<style>
+  :root{
+    --ink:#E8ECEF; --ink-soft:#93A2AD;
+    --paper:#0F1923; --surface:#1A2733; --surface-2:#1E2F3E;
+    --border:#2A3F52; --border-soft:#233A4C;
+    --accent:#F2701D; --accent-ink:#2A1200; --accent-soft:rgba(242,112,29,.16); --accent-text:#FFB27A;
+    --good:#27AE60; --good-soft:rgba(39,174,96,.16); --good-ink:#8FE3B0;
+    --bad:#E74C3C; --bad-soft:rgba(231,76,60,.18); --bad-ink:#FFB3A7;
+    --na:#7F8C8D; --na-soft:rgba(127,140,141,.18); --na-ink:#C7CFD1;
+    --code:#4FC3F7;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px -10px rgba(0,0,0,.55);
+    --radius: 10px;
+    color-scheme: dark;
+  }
+
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--paper); color:var(--ink);
+    font-family:"IBM Plex Sans",system-ui,-apple-system,sans-serif;
+    font-size:15px; line-height:1.45;
+    -webkit-tap-highlight-color: transparent;
+  }
+  h1,h2,h3,.disp{ font-family:"Barlow Condensed",system-ui,sans-serif; font-weight:700; letter-spacing:.01em; text-wrap:balance; }
+  .mono{ font-family:"IBM Plex Mono",ui-monospace,monospace; font-variant-numeric:tabular-nums; }
+  ::selection{ background:var(--accent-soft); }
+  button{ font-family:inherit; }
+  input,select,textarea{ font-family:inherit; font-size:14px; color:var(--ink); background:var(--surface-2); border:1px solid var(--border); border-radius:7px; padding:8px 10px; width:100%; min-width:0; max-width:100%; }
+  select{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  input::placeholder,textarea::placeholder{ color:var(--ink-soft); opacity:.8; }
+  input:focus-visible,select:focus-visible,textarea:focus-visible,button:focus-visible{ outline:2px solid var(--accent); outline-offset:1px; }
+  textarea{ resize:vertical; min-height:44px; }
+  a{ color:var(--accent-text); }
+
+  .app{ max-width:960px; margin:0 auto; padding:0 0 64px; }
+
+  /* ---------- Top bar ---------- */
+  .topbar{
+    position:sticky; top:0; z-index:20;
+    background:var(--surface);
+    border-bottom:1px solid var(--border);
+    padding:14px 18px 0;
+  }
+  .topbar-row{ display:flex; align-items:center; gap:12px; justify-content:space-between; flex-wrap:wrap; }
+  .brand{ display:flex; align-items:baseline; gap:10px; }
+  .brand .mark{
+    display:inline-flex; align-items:center; justify-content:center;
+    width:34px; height:34px; border-radius:8px; background:var(--accent); color:var(--accent-ink);
+    font-family:"Barlow Condensed"; font-weight:700; font-size:18px; flex:none;
+  }
+  .brand h1{ font-size:22px; margin:0; line-height:1; }
+  .brand .sub{ font-size:12px; color:var(--ink-soft); margin-top:2px; }
+  .badge{
+    display:inline-flex; align-items:center; gap:6px;
+    font-size:11px; font-weight:600; letter-spacing:.03em; text-transform:uppercase;
+    padding:5px 10px; border-radius:999px; border:1px solid var(--border);
+    background:var(--surface-2); color:var(--ink-soft);
+  }
+  .badge.on{ color:var(--good-ink); background:var(--good-soft); border-color:transparent; }
+  .badge.off{ color:var(--ink-soft); background:var(--surface-2); border-color:var(--border); }
+  .badge-dot{ width:6px; height:6px; border-radius:50%; background:currentColor; }
+
+  .tabs{ display:flex; gap:4px; margin-top:14px; overflow-x:auto; }
+  .tab-btn{
+    appearance:none; border:none; background:none; cursor:pointer; white-space:nowrap;
+    padding:10px 6px 12px; font-size:14px; font-weight:600; color:var(--ink-soft);
+    border-bottom:2px solid transparent; margin-bottom:-1px;
+  }
+  .tab-btn .zh{ font-size:11px; opacity:.75; margin-left:4px; }
+  body[data-local-tab="nuevo"] .tab-btn[data-tab="nuevo"],
+  body[data-local-tab="archivo"] .tab-btn[data-tab="archivo"],
+  body[data-local-tab="maestro"] .tab-btn[data-tab="maestro"]{
+    color:var(--ink); border-bottom-color:var(--accent);
+  }
+
+  .view{ padding:18px; }
+  body[data-local-tab="nuevo"] #view-archivo,
+  body[data-local-tab="nuevo"] #view-maestro{ display:none; }
+  body[data-local-tab="archivo"] #view-nuevo,
+  body[data-local-tab="archivo"] #view-maestro{ display:none; }
+  body[data-local-tab="maestro"] #view-nuevo,
+  body[data-local-tab="maestro"] #view-archivo{ display:none; }
+
+  /* ---------- Cards / sections ---------- */
+  .card{ background:var(--surface); border:1px solid var(--border-soft); border-radius:var(--radius); box-shadow:var(--shadow); }
+  .section-title{
+    display:flex; align-items:baseline; gap:8px; flex-wrap:wrap;
+    font-size:13px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; color:var(--ink-soft);
+    margin:26px 0 10px;
+  }
+  .section-title:first-child{ margin-top:0; }
+  .section-title .zh{ font-weight:500; text-transform:none; letter-spacing:0; font-size:12px; opacity:.7; }
+  .section-title .rule{ flex:1; height:1px; background:var(--border-soft); min-width:20px; }
+
+  .field-grid{ display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:12px 16px; padding:16px; }
+  @media (max-width:760px){ .field-grid{ grid-template-columns:repeat(2, minmax(0,1fr)); } }
+  @media (max-width:480px){ .field-grid{ grid-template-columns:minmax(0,1fr); } }
+  .field{ display:flex; flex-direction:column; gap:5px; min-width:0; }
+  .field label{ font-size:12px; font-weight:600; color:var(--ink-soft); }
+  .field label .zh{ font-weight:400; opacity:.75; margin-left:4px; }
+  .field .readonly-val{
+    font-family:"IBM Plex Mono"; font-size:13px; padding:8px 10px; border-radius:7px;
+    background:var(--surface-2); border:1px solid var(--border-soft); color:var(--code);
+  }
+
+  /* ---------- Groups / items ---------- */
+  .group{ margin-top:16px; border:1px solid var(--border-soft); border-radius:var(--radius); overflow:hidden; background:var(--surface); }
+  .group-head{
+    display:flex; align-items:center; justify-content:space-between; gap:10px;
+    padding:10px 14px; background:var(--surface-2); border-bottom:1px solid var(--border);
+  }
+  .group-head-titles h3{ font-size:18px; margin:0; letter-spacing:.02em; color:var(--ink); }
+  .group-head-titles .zh{ font-size:12px; color:var(--ink-soft); margin-top:1px; }
+  .group-progress{ font-family:"IBM Plex Mono"; font-size:12px; color:var(--ink-soft); white-space:nowrap; }
+  .group-note{ padding:8px 14px; font-size:12px; color:var(--accent-text); background:var(--accent-soft); border-bottom:1px solid var(--border-soft); }
+  .group-note .zh{ display:block; color:var(--ink-soft); opacity:.9; margin-top:2px; }
+
+  .item-row{ padding:12px 14px; border-top:1px solid var(--border-soft); display:grid; grid-template-columns:26px 1fr; gap:4px 10px; }
+  .item-row:first-of-type{ border-top:none; }
+  .item-num{ font-family:"IBM Plex Mono"; font-size:12px; color:var(--ink-soft); padding-top:2px; }
+  .item-text .t-es{ font-size:14px; }
+  .item-text .t-zh{ font-size:12.5px; color:var(--ink-soft); margin-top:2px; }
+  .item-controls{ grid-column:2; display:flex; flex-direction:column; gap:8px; margin-top:8px; }
+
+  .status-group{ display:flex; gap:6px; flex-wrap:wrap; }
+  .status-btn{
+    appearance:none; cursor:pointer; border-radius:7px; padding:7px 12px;
+    font-size:11.5px; font-weight:700; letter-spacing:.02em; text-transform:uppercase;
+    border:1px solid var(--border); background:var(--surface-2); color:var(--ink-soft);
+    line-height:1.3;
+  }
+  .status-btn .zh{ display:block; font-weight:500; text-transform:none; font-size:10px; opacity:.85; }
+  .status-btn[aria-pressed="true"].status-ok{ background:var(--good); border-color:var(--good); color:#08210F; }
+  .status-btn[aria-pressed="true"].status-bad{ background:var(--bad); border-color:var(--bad); color:#2A0805; }
+  .status-btn[aria-pressed="true"].status-na{ background:var(--na); border-color:var(--na); color:#12181A; }
+
+  .item-row.answered-ok{ background:var(--good-soft); }
+  .item-row.answered-bad{ background:var(--bad-soft); }
+  .item-row.answered-na{ background:var(--na-soft); }
+
+  .item-row textarea{ width:100%; font-size:13px; }
+
+  .evidence-row{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .ev-btn{
+    display:inline-flex; align-items:center; gap:6px; cursor:pointer;
+    border:1px dashed var(--border); background:var(--surface-2); color:var(--ink-soft);
+    border-radius:7px; padding:7px 10px; font-size:12px; font-weight:600;
+  }
+  .ev-btn svg{ width:15px; height:15px; }
+  .thumb-wrap{ position:relative; display:inline-flex; }
+  .thumb-wrap img{ width:52px; height:52px; object-fit:cover; border-radius:7px; border:1px solid var(--border); }
+  .thumb-remove{
+    position:absolute; top:-6px; right:-6px; width:18px; height:18px; border-radius:50%;
+    background:var(--bad); color:#fff; border:2px solid var(--surface); font-size:11px; line-height:1; cursor:pointer;
+  }
+
+  /* ---------- Signatures ---------- */
+  .sig-grid{ display:grid; grid-template-columns:repeat(3,1fr); gap:14px; padding:16px; }
+  @media (max-width:760px){ .sig-grid{ grid-template-columns:1fr; } }
+  .sig-card{ border:1px solid var(--border-soft); border-radius:var(--radius); padding:12px; background:var(--surface-2); }
+  .sig-card h4{ margin:0; font-size:16px; font-family:"Barlow Condensed"; }
+  .sig-card .zh{ font-size:11px; color:var(--ink-soft); }
+  .sig-card .sig-name{ font-size:12px; color:var(--ink-soft); margin:6px 0 8px; min-height:16px; }
+  .sig-pad-wrap{ background:var(--surface); border:1px dashed var(--border); border-radius:8px; touch-action:none; }
+  canvas.sig-pad{ display:block; width:100%; height:110px; border-radius:8px; cursor:crosshair; }
+  .sig-actions{ display:flex; gap:8px; margin-top:8px; }
+  .sig-btn{ flex:1; border:1px solid var(--border); background:var(--surface); border-radius:7px; padding:7px; font-size:12px; font-weight:600; cursor:pointer; color:var(--ink-soft); }
+  .sig-btn.confirm{ background:var(--good); border-color:var(--good); color:#08210F; }
+  .sig-status{ font-size:11px; margin-top:6px; font-weight:600; color:var(--ink-soft); }
+  .sig-status.done{ color:var(--good-ink); }
+
+  /* ---------- Action bar ---------- */
+  .actionbar{
+    position:sticky; bottom:0; margin-top:22px; padding:14px 16px; background:var(--surface);
+    border-top:1px solid var(--border); border-radius:var(--radius) var(--radius) 0 0;
+    box-shadow:0 -6px 20px -10px rgba(0,0,0,.4);
+    display:flex; align-items:center; gap:12px; flex-wrap:wrap;
+  }
+  .btn{ appearance:none; border:none; cursor:pointer; border-radius:8px; padding:11px 18px; font-size:14px; font-weight:700; }
+  .btn-primary{ background:var(--accent); color:var(--accent-ink); }
+  .btn-ghost{ background:var(--surface-2); color:var(--ink); border:1px solid var(--border); }
+  .btn-sm{ padding:8px 12px; font-size:12.5px; border-radius:7px; }
+  .btn:disabled{ opacity:.5; cursor:not-allowed; }
+  .warn-text{ font-size:12px; color:var(--bad-ink); }
+  .toast{
+    position:fixed; left:50%; bottom:20px; transform:translateX(-50%);
+    background:var(--surface-2); border:1px solid var(--border); color:var(--ink); padding:10px 16px; border-radius:8px; font-size:13px;
+    box-shadow:var(--shadow); z-index:50; opacity:0; pointer-events:none; transition:opacity .25s, transform .25s;
+    max-width:88vw; text-align:center;
+  }
+  .toast.show{ opacity:1; transform:translateX(-50%) translateY(-4px); }
+
+  /* ---------- Archive ---------- */
+  .stats-row{ display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-bottom:16px; }
+  @media (max-width:640px){ .stats-row{ grid-template-columns:repeat(2,1fr); } }
+  .stat{ background:var(--surface); border:1px solid var(--border-soft); border-radius:var(--radius); padding:12px 14px; }
+  .stat .num{ font-family:"IBM Plex Mono"; font-size:24px; font-weight:600; color:var(--code); }
+  .stat .lbl{ font-size:11px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.03em; margin-top:2px; }
+
+  .toolbar-row{ display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; margin-bottom:14px; }
+  .toolbar-row .btns{ display:flex; gap:8px; flex-wrap:wrap; }
+
+  .empty-state{ text-align:center; padding:48px 20px; color:var(--ink-soft); }
+
+  .record-card{ border:1px solid var(--border-soft); border-radius:var(--radius); margin-bottom:12px; overflow:hidden; background:var(--surface); }
+  .record-head{ display:flex; }
+  .record-rule{ width:6px; flex:none; }
+  .record-rule.ok{ background:var(--good); } .record-rule.mid{ background:var(--accent); } .record-rule.bad{ background:var(--bad); }
+  .record-main{ flex:1; padding:12px 14px; }
+  .record-top{ display:flex; justify-content:space-between; gap:10px; flex-wrap:wrap; align-items:baseline; }
+  .record-id{ font-family:"IBM Plex Mono"; font-size:12px; color:var(--code); }
+  .record-pct{ font-family:"IBM Plex Mono"; font-weight:700; font-size:15px; }
+  .record-title{ font-size:17px; font-family:"Barlow Condensed"; font-weight:700; margin:2px 0 6px; }
+  .record-meta{ display:flex; flex-wrap:wrap; gap:4px 14px; font-size:12px; color:var(--ink-soft); }
+  .record-meta b{ color:var(--ink); font-weight:600; }
+  .record-card details{ border-top:1px solid var(--border-soft); }
+  .record-card summary{ cursor:pointer; padding:9px 14px; font-size:12px; font-weight:700; color:var(--ink-soft); letter-spacing:.02em; text-transform:uppercase; list-style:none; }
+  .record-card summary::-webkit-details-marker{ display:none; }
+  .record-actions{ display:flex; gap:8px; padding:0 14px 12px; flex-wrap:wrap; }
+  .detail-group{ padding:0 14px 10px; }
+  .detail-group h5{ font-size:13px; margin:12px 0 4px; color:var(--ink-soft); }
+  .detail-item{ display:flex; gap:8px; align-items:flex-start; padding:5px 0; font-size:12.5px; border-top:1px solid var(--border-soft); }
+  .detail-item:first-of-type{ border-top:none; }
+  .pill{ flex:none; font-size:10px; font-weight:700; text-transform:uppercase; padding:2px 7px; border-radius:999px; }
+  .pill.ok{ background:var(--good-soft); color:var(--good-ink); } .pill.bad{ background:var(--bad-soft); color:var(--bad-ink); } .pill.na{ background:var(--na-soft); color:var(--na-ink); } .pill.blank{ background:var(--surface-2); color:var(--ink-soft); }
+  .detail-item .dtext{ flex:1; }
+  .detail-item .dobs{ display:block; color:var(--ink-soft); margin-top:2px; }
+  .detail-item img{ width:34px; height:34px; object-fit:cover; border-radius:5px; border:1px solid var(--border); flex:none; }
+  .sig-strip{ display:flex; gap:14px; padding:12px 14px; flex-wrap:wrap; }
+  .sig-strip .sigmini{ text-align:center; }
+  .sig-strip img{ width:120px; height:44px; object-fit:contain; background:var(--surface-2); border:1px solid var(--border-soft); border-radius:6px; }
+  .sig-strip .sigmini div{ font-size:10px; color:var(--ink-soft); margin-top:3px; }
+
+  /* ---------- Maestro ---------- */
+  .maestro-card{ padding:16px; }
+  .maestro-status{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:14px; }
+  .maestro-upload{ border:1.5px dashed var(--border); border-radius:var(--radius); padding:20px; text-align:center; background:var(--surface-2); margin-bottom:16px; }
+  .maestro-upload input[type=file]{ margin-top:10px; width:100%; }
+  .maestro-table{ width:100%; border-collapse:collapse; font-size:12.5px; }
+  .maestro-table th,.maestro-table td{ border:1px solid var(--border-soft); padding:6px 8px; text-align:left; vertical-align:top; }
+  .maestro-table th{ background:var(--surface-2); color:var(--ink-soft); font-size:11px; text-transform:uppercase; letter-spacing:.03em; }
+  .maestro-count{ font-family:"IBM Plex Mono"; color:var(--code); font-weight:600; }
+  .maestro-note{ font-size:12px; color:var(--ink-soft); margin-top:10px; }
+
+  .foot{ padding:20px 18px 0; font-size:11.5px; color:var(--ink-soft); border-top:1px solid var(--border-soft); margin-top:30px; }
+  .foot .zh{ display:block; margin-top:4px; opacity:.85; }
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute">
+  <symbol id="ic-camera" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 8h3l1.5-2h7L17 8h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1Z"/><circle cx="12" cy="13.5" r="3.4"/></symbol>
+  <symbol id="ic-gallery" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3.5" y="4.5" width="17" height="15" rx="1.6"/><circle cx="8.3" cy="9.3" r="1.6"/><path d="m4.5 17.5 5-5.2 3.2 3 3.6-4.3 4.2 5"/></symbol>
+</svg>
+
+<div class="app">
+  <div class="topbar">
+    <div class="topbar-row">
+      <div class="brand">
+        <span class="mark">QC</span>
+        <div>
+          <h1>QAQC Paneles</h1>
+          <div class="sub">Explotación · Taladros Largos (Long Hole Stoping) · v1.0</div>
+        </div>
+      </div>
+      <span class="badge" id="maestroPill"><span class="badge-dot"></span><span id="maestroPillText">Maestro: datos de ejemplo</span></span>
+    </div>
+    <nav class="tabs">
+      <button class="tab-btn" data-tab="nuevo" type="button">Nuevo <span class="zh">新建</span></button>
+      <button class="tab-btn" data-tab="archivo" type="button">Archivo <span class="zh">已保存</span></button>
+      <button class="tab-btn" data-tab="maestro" type="button">Maestro <span class="zh">主表</span></button>
+    </nav>
+  </div>
+
+  <!-- ============ VISTA: NUEVO REGISTRO ============ -->
+  <section id="view-nuevo" class="view">
+
+    <div class="section-title"><span>Datos generales</span><span class="zh">基本信息</span><span class="rule"></span></div>
+    <div class="card field-grid" id="headerFields"></div>
+
+    <div class="section-title"><span>Grupos de verificación</span><span class="zh">检查项目组</span><span class="rule"></span></div>
+    <div id="groupsContainer"></div>
+
+    <div class="section-title"><span>Firmas de validación</span><span class="zh">验证签名</span><span class="rule"></span></div>
+    <div class="card sig-grid" id="sigGrid"></div>
+
+    <div class="actionbar">
+      <button class="btn btn-primary" id="btnSubmit" type="button">Enviar registro <span style="opacity:.8;font-weight:500">/ 提交记录</span></button>
+      <button class="btn btn-ghost" id="btnReset" type="button">Limpiar <span style="opacity:.8;font-weight:500">/ 清空</span></button>
+      <span class="warn-text" id="submitWarn"></span>
+    </div>
+  </section>
+
+  <!-- ============ VISTA: ARCHIVO ============ -->
+  <section id="view-archivo" class="view">
+    <div class="stats-row" id="statsRow"></div>
+    <div class="toolbar-row">
+      <div class="btns">
+        <button class="btn btn-ghost btn-sm" id="btnExportAllXlsx" type="button">Descargar Excel (todo) <span style="opacity:.75">/ 下载全部Excel</span></button>
+        <button class="btn btn-ghost btn-sm" id="btnExportAllCsv" type="button">CSV</button>
+      </div>
+    </div>
+    <div id="recordsList"></div>
+  </section>
+
+  <!-- ============ VISTA: MAESTRO ============ -->
+  <section id="view-maestro" class="view">
+    <div class="card maestro-card">
+      <div class="section-title" style="margin-top:0"><span>Maestro de datos</span><span class="zh">主数据表</span><span class="rule"></span></div>
+      <div class="maestro-status">
+        <span class="badge" id="maestroStatusBadge"><span class="badge-dot"></span><span id="maestroStatusText">Usando datos de ejemplo</span></span>
+      </div>
+      <p style="font-size:13px;color:var(--ink-soft);margin:0 0 14px">
+        Las listas de Labor/Panel, Categoría de explotación, Turno, Guardia, Fase, Inspector, Supervisor,
+        Empresa, Operador de equipo, Código de equipo y Actividad que ves en "Nuevo registro" vienen de este
+        maestro. Puedes subir directamente el archivo real que ya usan (<b>Maestro_Paneles.xlsx</b>, con sus
+        columnas Activity/Inspector/Shift/Contractor/Guard/Supervisor/Machine/Codigo/Operator/Range/Name/
+        Category/Active) — la app lo reconoce automáticamente y deriva el tipo de panel (STOPE/UPPER) y la fase
+        desde el nombre y la categoría de cada plan. También puedes usar la plantilla simple (una lista por
+        columna) si prefieres armar el maestro tú mismo. Mientras no cargues uno, se usan valores de
+        <b>ejemplo</b>. Queda guardado solo en este dispositivo/navegador — nunca se sube a ningún repositorio.
+        <span class="zh" style="display:block;margin-top:6px;">
+          "新建记录"中作业/面板、开采类别、班次、班组、阶段、检查员、主管、公司、设备操作员、设备代码和活动的列表来自此主数据表。
+          您可以直接上传目前使用的真实文件（Maestro_Paneles.xlsx），应用会自动识别并根据面板名称和类别推导面板类型（STOPE/UPPER）和阶段。
+          也可以使用简单模板（每列一个列表）自行整理主数据。在上传之前，系统使用示例值。数据仅保存在本设备/浏览器中，绝不会上传到任何代码仓库。
+        </span>
+      </p>
+      <div class="maestro-upload">
+        <div style="font-weight:600">Cargar archivo maestro (.xlsx / .csv) <span style="opacity:.75;font-weight:500">/ 上传主数据表</span></div>
+        <input type="file" id="maestroFile" accept=".xlsx,.xls,.csv">
+        <div style="margin-top:12px; display:flex; gap:8px; justify-content:center; flex-wrap:wrap;">
+          <button class="btn btn-ghost btn-sm" id="btnDownloadTemplateXlsx" type="button">Descargar plantilla Excel</button>
+          <button class="btn btn-ghost btn-sm" id="btnDownloadTemplateCsv" type="button">Descargar plantilla CSV</button>
+          <button class="btn btn-ghost btn-sm" id="btnResetMaestro" type="button">Restablecer a ejemplo</button>
+        </div>
+      </div>
+      <div id="maestroPreview"></div>
+      <div class="maestro-note">
+        Se aceptan dos formatos: (1) el archivo real <b>Maestro_Paneles.xlsx</b> tal como lo maneja la operación
+        (detectado automáticamente por sus columnas Name/Category/Active, entre otras), o (2) la plantilla simple
+        de esta app — una lista por columna, encabezado en la fila 1: PANELES, TIPO_PANEL, TURNOS, GUARDIAS,
+        INSPECTORES, SUPERVISORES, EMPRESAS, OPERADORES_EQUIPO, CODIGOS_EQUIPO, FASES, ACTIVIDADES.
+      </div>
+    </div>
+  </section>
+
+  <div class="foot">
+    Formato base: "FORMATO QA/QC INSPECCION PANELES" (Hoja3, Versión 1.0, bilingüe ES/中文) · Marco normativo de
+    referencia: Decreto 1886 de 2015, modificado por el Decreto 944 de 2022 (Colombia). Todo el registro
+    (encabezado, evidencia fotográfica y firmas) se guarda en este dispositivo; usa "Descargar Excel" para
+    compartirlo. La evidencia fotográfica se comprime en el dispositivo antes de guardarse.
+    <span class="zh">
+      基础格式："QA/QC矿房检查表"（Hoja3，版本1.0，中西双语版）。参考法规：哥伦比亚2015年第1886号法令，经2022年第944号法令修订。
+      所有记录（表头、照片证据和签名）保存在本设备中，请使用"下载Excel"进行分享。照片证据在设备上压缩后保存。
+    </span>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+window.__QAQC_GRUPOS__ = [{"es": "1. VENTILACIÓN/ SERVICIOS AUXILIARES", "zh": "1. 通风/辅助服务", "items": [{"es": "Tablero de gases (se encuentra actualizado)", "zh": "气体检测板（是否已更新）"}, {"es": "Atmósfera minera [registre los datos de lectura del multidetector: Oxígeno (O2) 19.5%-23.5%; Monóxido (CO) <10 ppm; Dióxido de Carbono (CO2) < 1000 ppm; Dióxido de Nitrógeno (NO2) < 1 ppm ; Dióxido de Carbono (CO2) < 0.5% ;Metáno (CH4) < 1.0% ]", "zh": "矿井空气[记录多功能检测仪读数：氧气(O2) 19.5%-23.5%；一氧化碳(CO) <10 ppm；二氧化碳(CO2) <1000 ppm；二氧化氮(NO2) <1 ppm；二氧化碳(CO2) <0.5%；甲烷(CH4) <1.0%]"}, {"es": "Estado ductos de ventilación (distancia al frente de avance 30m, sin fugas, bien acoplado).", "zh": "风筒布状态（距掘进工作面30米，无泄漏，连接良好）。"}, {"es": "Estado de ventiladores (presenta vibración, ruidos anómalos)", "zh": "风机状态（是否存在振动、异常噪声）"}, {"es": "Sensación térmica (describa si es alta o normal)", "zh": "体感温度（说明温度较高或正常）"}, {"es": "Linea de agua al frente de trabajo a 30m, (tiene antilatigo en la flauta), señalizadas color verde", "zh": "工作面供水管线距工作面30米（软管端部配有防甩装置），以绿色标识"}, {"es": "Linea de aire comprimido al frente de trabajo a 30m (tiene antilatigo en la flauta) Señalizadas en color azul", "zh": "工作面压缩空气管线距工作面30米（软管端部配有防甩装置），以蓝色标识"}]}, {"es": "2.ELECTRICOS", "zh": "2. 电气", "items": [{"es": "Distancia del ultimo nicho hasta la cara libre del panel", "zh": "最后一个配电壁龛至矿房自由面的距离"}, {"es": "Estándar del nicho ( orden y aseo, soporte, condiciones de humedad, tipo de piso \"losa\",iluminación, señalizacion, extintor, cajas electricas)", "zh": "硐室标准（整齐清洁、支护、湿度条件、地面类型“混凝土板”、照明、标识、灭火器、电气箱）"}, {"es": "Extensiones electricas ( Esta prohibido el uso de extensiones electricas reportar)", "zh": "电源延长线（禁止使用电源延长线，如有使用须报告）"}, {"es": "Linea de energía electrica (distancia al frente de avance 30m máximo, sin golpes, añadiduras, sin presencia de agua)", "zh": "电力线（距掘进工作面最大30米，无撞击、接头及积水）"}, {"es": "Ganchos de servicios eléctricos (espaciados cada 3m, instalados de manera adecuada)", "zh": "电气服务挂钩（间距3米，安装正确）"}, {"es": "Señal de radio en la labor y estado del cable ( Leaky feeder)", "zh": "作业区域无线电信号及电缆状态（Leaky Feeder / 漏水喂食器）"}]}, {"es": "3. SOSTENIMIENTO", "zh": "3. 支护", "items": [{"es": "Tipo de soporte: Tipo I, II, III, IV, V", "zh": "支护类型：I、II、III、IV、V型"}, {"es": "Estado del soporte instalado area de perforacion del panel (concreto agrietado, mallas deterioradas y cargadas, áreas sin soporte).", "zh": "矿房钻孔区域已安装支护状态（混凝土开裂、网片损坏或受载、无支护区域）。"}, {"es": "Espesor de la capa de concreto, zonas sin cobertura, concreto fracturado.", "zh": "混凝土层厚度、无覆盖区域、破碎混凝土。"}, {"es": "Estación de desabombe (zona seguridad, señalizada, patrón de barras y estado de estas)", "zh": "撬棍站（安全区域、标识、钢筋布置模式及其状态）"}, {"es": "Estado del soporte instalado 100m lineales antes de la cara libre del panel (concreto agrietado, mallas deterioradas y cargadas, áreas sin soporte)", "zh": "矿房自由面前方100米范围内已安装支护状态（混凝土开裂、网片损坏或受载、无支护区域）"}]}, {"es": "4.PREPARACIÓN DEL FRENTE", "zh": "4. 工作面准备", "items": [{"es": "¿Hay material, rocas sueltas, detritos, etc., producto de la voladura anterior?", "zh": "是否存在上次爆破产生的材料、松散岩石、碎屑等？"}, {"es": "¿El piso se encuentra nivelado?", "zh": "地面是否平整？"}, {"es": "¿Hay empozamiento de agua que comprometan la operatividad del equipo al transitar ?", "zh": "是否存在影响设备通行和运行的积水？"}, {"es": "¿Hay empozamiento de agua en el lugar donde se ubicará el equipo?", "zh": "设备将要停放的位置是否有积水？"}, {"es": "¿Hay barrenos para reperforar?, indique cuantos.", "zh": "是否有需要重新钻孔的炮孔？请注明数量。"}]}, {"es": "5.SEGURIDAD", "zh": "5. 安全", "items": [{"es": "¿El panel cuenta con cadena de señalización en la cara libre?", "zh": "矿房自由面是否设置警示链条？"}, {"es": "¿El ingreso al panel se encuentra nomenclado?", "zh": "矿房入口是否已编号？"}, {"es": "¿Se dispone de manguera HDPE para el encamisado de nuevas líneas?", "zh": "是否有HDPE软管用于新孔线套管？"}, {"es": "¿El panel cuenta con las 6 líneas de seguridad barrenadas y encamisadas? (lineas de colchón)", "zh": "矿房是否已完成6条安全线的钻孔和套管？（缓冲线）"}, {"es": "En caso de no contar con las 6 líneas de seguridad, averiguar si corresponde a labor de condición de actividad no rutinaria.", "zh": "如未完成6条安全线，请确认是否属于非例行活动条件的作业。"}, {"es": "¿Se mantiene el orden y aseo a lo largo de la labor?", "zh": "整个作业区域是否保持整齐和清洁？"}]}, {"es": "6.LINEA DE VIDA STOPE", "zh": "6. 采场生命线", "items": [{"es": "Tipo de perno: Split Set galvanizado de 2,10 m para malla y perno helicoidal de mínimo 2,10 m para concreto lanzado.", "zh": "锚杆类型：网片使用2.10米镀锌锚杆，喷射混凝土使用长度至少2.10米的钢筋锚杆。"}, {"es": "Verificar Línea de vida en buen estado, sin golpes ni deterioro.", "zh": "检查生命线状态良好，无撞击或损坏。"}, {"es": "Verificar Pernos en buen estado, sin deformaciones ni daños.", "zh": "检查锚杆状态良好，无变形或损坏。"}, {"es": "¿La Altura promedio de los pernos instalados esta entre 1,50 m y 1,80 m?", "zh": "已安装锚杆的平均高度是否在1.50米至1.80米之间？"}, {"es": "¿La Separación entre pernos es de máximo 3,00 m en línea horizontal?", "zh": "水平线上锚杆间距是否最大为3.00米？"}, {"es": "¿La Platina con el perno esta separada mínimo 10 centímetros del hastial?", "zh": "锚杆托盘与巷道帮壁之间的距离是否至少为10厘米？"}, {"es": "¿ la Línea de vida esta instalada dentro del área de influencia del panel?", "zh": "生命线是否安装在矿房影响区域内？"}, {"es": "¿ La Línea de vida esta instalada hasta 10 m atrás de la cara libre del panel?", "zh": "生命线是否安装至矿房自由面后方10米处？"}, {"es": "Verificar nudo ballestrinque en cada perno.", "zh": "检查每根锚杆上的双套结是否正确。"}, {"es": "Verificar que no haya catenarias pronunciadas entre pernos.", "zh": "检查锚杆之间是否存在明显的悬垂弧度。"}, {"es": "Verificar que se encuentre correctamente realizado el ponchado de la linea de vida", "zh": "检查生命线压接是否正确完成"}, {"es": "La línea de vida está aprobada y cuenta con el precinto de seguridad en el cabo del extremo.", "zh": "生命线已获批准，端部绳头配有安全封条。"}], "nota": {"es": "Aplica solo si la Categoría de explotación es STOPE.", "zh": "仅当开采类别为STOPE（下向孔矿房）时适用。"}}, {"es": "8.CABLE BOLT", "zh": "8. Cable Bolt", "items": [{"es": "Todos los Cable Bolts se encuentran marcados de acuerdo al plan (aerosol azul, número de puntos marcados).", "zh": "所有Cable Bolt均按照计划进行标记（蓝色喷漆及标记点数量）。"}, {"es": "¿Es necesario remarcar? (¿Hasta qué línea se encuentran marcados?)", "zh": "是否需要重新标记？（已标记到哪一排？）"}]}, {"es": "9. FASE CABLE BOLT", "zh": "9. Cable Bolt阶段", "items": [{"es": "Perforación: ¿Cuántos barrenos Cable Bolts se encuentran perforados y hasta qué línea y de que longitud (6m / 10m)?", "zh": "钻孔：已钻孔的锚索孔有多少个？钻到哪一排？长度是多少（6米/10米）？"}, {"es": "¿Cuanto cables del total se encuentran calafateados?, indicar tiempo de fraguado.", "zh": "所有锚索中有多少根已封堵？请注明胶结时间。"}, {"es": "Inyección: ¿Cuántos Cable Bolts se encuentran inyectados y hasta qué línea están inyectados?", "zh": "注浆：已注浆的锚索有多少根？注浆到哪一排？"}, {"es": "Inyección: ¿Se observa retorno en la manguera?", "zh": "注浆：软管中是否观察到回流？"}, {"es": "Inyección: ¿Cuánto tiempo lleva de fraguado?", "zh": "注浆：已胶结多长时间？"}, {"es": "Tensión: ¿Cuántos Cable Bolts se encuentran tensionados y hasta qué línea están tensionados?", "zh": "张拉：已有多少根锚索完成拉紧？拉紧到哪一排？"}, {"es": "Tensión: ¿A cuántos bares fueron tensionados? ¿Tienen el Barril y la planchuela?", "zh": "拉紧：拉紧压力是多少bar？是否配有桶形组件（Barril）和钢板（planchuela）？"}, {"es": "¿A que distancia de la cara libre se encuentra los Cable Bolts?", "zh": "锚索距离自由面多远？"}]}, {"es": "10. MARCACIÓN", "zh": "10. 标记", "items": [{"es": "Línea de inicio y fin del panel. (¿Se encuentran marcadas? ¿Es necesario remarcar?)", "zh": "矿房起始线和终止线。（是否已标记？是否需要重新标记？）"}, {"es": "Líneas de SLOT marcadas S1–S6. (¿Se encuentran marcadas?)", "zh": "拉槽孔S1–S6已标记。（是否已标记？）"}, {"es": "Se encuentran marcadas las líneas de PRODUCCIÓN R1–R?. ¿Indique hasta qué línea de producción está la marcación?", "zh": "生产线R1–R?是否已标记？请注明标记到哪一条生产线。"}, {"es": "Puntos de ruptura. (¿Se encuentran marcados? ¿Es necesario remarcar?)", "zh": "断裂点。（是否已标记？是否需要重新标记？）"}, {"es": "¿Hay suficientes líneas marcadas? (Mínimo 6 líneas de ventaja).", "zh": "标记线是否足够？（至少6条超前线）。"}]}, {"es": "11.PERFORACIÓN", "zh": "11. 钻孔", "items": [{"es": "¿Con qué equipo se está perforando? (Sandvik 210, Sandvik 2710, Epiroc Simba, Huatai).", "zh": "使用什么设备进行钻孔？（山特维克210、山特维克2710、安百拓、华泰）。"}, {"es": "¿El equipo cuenta con inclinómetro operativo y calibrado? Si no cumple, indicar con qué se está realizando la medición.", "zh": "设备是否配有正常运行且已校准的倾角仪？如不符合，请注明使用何种方式进行测量。"}, {"es": "¿Cuánto desfase hay entre el eje de alineación y el punto de penetración de la broca? Tomar medida.", "zh": "对齐轴线与钻头进入点之间的偏差是多少？请测量。"}, {"es": "¿En qué línea se encuentra la perforación?", "zh": "钻孔目前进行到哪一排？"}, {"es": "¿Los barrenos de las líneas de seguridad están encamisados? En caso de no cumplir, indicar cuántos no están encamisados.", "zh": "安全线炮孔是否已套管？如不符合，请注明未套管的数量。"}, {"es": "¿El emboquille cumple con el diseño? En caso de no cumplir, indicar si se debe a la mesa del equipo, a la condición del terreno u otro motivo indicado por el operador.", "zh": "孔口位置是否符合设计？如不符合，请注明是由于设备钻台、地质条件或操作员说明的其他原因。"}, {"es": "¿Los barrenos de las líneas de producción están encamisados? En caso de no cumplir, indicar cuántos no están encamisados.", "zh": "生产线炮孔是否已套管？如不符合，请注明未套管的数量。"}, {"es": "¿Se esta cumpliendo con el patron indicado en el plan? En caso de no cumplir indicar la razón.", "zh": "是否按照计划规定的布置模式执行？如不符合，请说明原因。"}]}, {"es": "12.VOLADURA (Solo si estan en cargue )", "zh": "12. 爆破（仅在装药时）", "items": [{"es": "Indicar en qué línea va la perforación y en qué línea va la voladura.", "zh": "注明钻孔进行到哪一排，以及爆破进行到哪一排。"}, {"es": "Indicar cuántas líneas y el número de barrenos que saldrán con la siguiente voladura.", "zh": "注明下一次爆破将起爆多少排以及炮孔数量。"}, {"es": "¿Se está cargando de acuerdo con el estándar: 1 m = 2,4 kg de Anfo?", "zh": "是否按照标准装药：1米=2.4公斤ANFO？"}], "nota": {"es": "Aplica solo durante actividad de carguío de explosivos.", "zh": "仅在装药作业期间适用。"}}];
+window.__QAQC_MASTER_DEFAULT__ = {"PANELES": ["VS_9999_PanelEjemplo_W_ST_1", "VS_9999_PanelEjemplo_W_UP_1", "YR_9999_PanelEjemplo_W_ST_2"], "TIPO_PANEL": ["STOPE", "UPPER"], "TURNOS": ["Día / 白班", "Noche / 夜班"], "GUARDIAS": ["A", "B", "C"], "INSPECTORES": ["Inspector Ejemplo 1", "Inspector Ejemplo 2"], "SUPERVISORES": ["Supervisor Ejemplo 1", "Supervisor Ejemplo 2"], "EMPRESAS": ["Operación Mina", "Contratista"], "OPERADORES_EQUIPO": ["Operador Ejemplo 1 — Especialista en Barrenación", "Operador Ejemplo 2 — Operador de equipos de perforación I"], "CODIGOS_EQUIPO": ["Equipo Ejemplo DL210 — DL-EJ01", "Equipo Ejemplo Simba — SB-EJ01"], "FASES": ["Producción / 生产", "Preparación / 准备"], "ACTIVIDADES": ["Topografía y diseño del panel", "Levantamiento y definición geométrica del stope", "Instalación de servicios auxiliares", "Ventilación", "Energía eléctrica", "Línea de agua", "Línea de aire comprimido", "Señal de comunicación", "Marcación topográfica", "Líneas de slot", "Líneas de producción", "Ejes de alineación", "Puntos de ruptura del panel", "Perforación y apertura del slot", "Perforación de la chimenea (slot)", "Perforación de producción (taladros largos)", "Perforación vertical / subvertical", "Perforación con Simba", "Perforación con Sandvik", "Perforación con Huatai", "Instalación de cable Bolt", "Perforación barreno para cable", "Instalación de cable", "Calafateo", "Inyección", "Tensionado de cable", "Cargue de explosivo", "Voladura primaria", "Detonación del slot", "Voladura secundaria", "Detonación de líneas", "Ventilación post-voladura", "Control de pasivos / saneamiento", "Desquinche", "Control de material suelto", "Extracción de material", "Transporte hacia superficie", "Control de dilución", "Seguimiento de material extraído", "Relleno del stope (backfill)", "Relleno hidráulico (backfill)", "Relleno detrítico (rock fill)", "Mezcla de relleno (cemented rock fill)"]};
+window.__QAQC_HEADER_FIELDS__ = [{"key": "fecha", "es": "Fecha", "zh": "日期", "type": "date"}, {"key": "inspector", "es": "Inspector", "zh": "检查员", "type": "select", "list": "INSPECTORES"}, {"key": "empresa", "es": "Empresa", "zh": "公司", "type": "select", "list": "EMPRESAS"}, {"key": "supervisor", "es": "Supervisor", "zh": "主管", "type": "select", "list": "SUPERVISORES"}, {"key": "turno", "es": "Turno", "zh": "班次", "type": "select", "list": "TURNOS"}, {"key": "labor", "es": "Labor (panel)", "zh": "作业（面板）", "type": "select", "list": "PANELES"}, {"key": "operadorEquipo", "es": "Operador de equipo", "zh": "设备操作员", "type": "select", "list": "OPERADORES_EQUIPO"}, {"key": "guardia", "es": "Guardia", "zh": "班组", "type": "select", "list": "GUARDIAS"}, {"key": "fase", "es": "Fase", "zh": "阶段", "type": "select", "list": "FASES"}, {"key": "codigoEquipo", "es": "Código equipo", "zh": "设备代码", "type": "select", "list": "CODIGOS_EQUIPO"}, {"key": "categoriaExplotacion", "es": "Categoría explotación", "zh": "开采类别", "type": "select", "list": "TIPO_PANEL"}, {"key": "actividad", "es": "Actividad", "zh": "活动", "type": "text_list", "list": "ACTIVIDADES", "placeholder": "Perforación de producción"}];
+window.__QAQC_SIGNERS__ = [{"key": "inspector", "es": "Firma Inspector", "zh": "检查员签名", "nameField": "inspector"}, {"key": "supervisor", "es": "Firma Supervisor", "zh": "主管签名", "nameField": "supervisor"}, {"key": "operador", "es": "Firma Operador de Equipo", "zh": "设备操作员签名", "nameField": "operadorEquipo"}];
+window.__QAQC_MAESTRO_COLUMNS__ = [{"key": "PANELES", "es": "Paneles / Labores", "zh": "面板/作业", "aliases": ["PANELES", "PANEL", "LABOR", "LABORES", "NAME", "NOMBRE"]}, {"key": "TIPO_PANEL", "es": "Tipo de panel", "zh": "面板类型", "aliases": ["TIPO_PANEL", "TIPO DE PANEL", "TIPO PANEL", "CATEGORIA EXPLOTACION", "CATEGORIA_EXPLOTACION"]}, {"key": "TURNOS", "es": "Turnos", "zh": "班次", "aliases": ["TURNOS", "TURNO", "SHIFT"]}, {"key": "GUARDIAS", "es": "Guardias", "zh": "班组", "aliases": ["GUARDIAS", "GUARDIA", "GUARD"]}, {"key": "INSPECTORES", "es": "Inspectores", "zh": "检查员", "aliases": ["INSPECTORES", "INSPECTOR"]}, {"key": "SUPERVISORES", "es": "Supervisores", "zh": "主管", "aliases": ["SUPERVISORES", "SUPERVISOR", "LIDERES_TURNO", "LIDER DE TURNO", "LIDER"]}, {"key": "EMPRESAS", "es": "Empresas / Contratistas", "zh": "公司/承包商", "aliases": ["EMPRESAS", "EMPRESA", "CONTRATISTA", "CONTRATISTAS", "CONTRACTOR"]}, {"key": "OPERADORES_EQUIPO", "es": "Operadores de equipo", "zh": "设备操作员", "aliases": ["OPERADORES_EQUIPO", "OPERADOR DE EQUIPO", "OPERADOR_EQUIPO", "OPERATOR NAME", "OPERATOR"]}, {"key": "CODIGOS_EQUIPO", "es": "Códigos de equipo", "zh": "设备代码", "aliases": ["CODIGOS_EQUIPO", "CODIGO EQUIPO", "CODIGO_EQUIPO", "MACHINE NAME", "CODIGO"]}, {"key": "FASES", "es": "Fases", "zh": "阶段", "aliases": ["FASES", "FASE", "CATEGORY", "CATEGORIA"]}, {"key": "ACTIVIDADES", "es": "Actividades", "zh": "活动", "aliases": ["ACTIVIDADES", "ACTIVIDAD", "ACTIVITY"]}];
+window.__QAQC_PANEL_TIPO_DEFAULT__ = {"VS_9999_PanelEjemplo_W_ST_1": "STOPE", "VS_9999_PanelEjemplo_W_UP_1": "UPPER", "YR_9999_PanelEjemplo_W_ST_2": "STOPE"};
+window.__QAQC_PANEL_FASE_DEFAULT__ = {"VS_9999_PanelEjemplo_W_ST_1": "Preparación / 准备", "VS_9999_PanelEjemplo_W_UP_1": "Producción / 生产", "YR_9999_PanelEjemplo_W_ST_2": "Producción / 生产"};
+</script>
+<script src="fonts/wqy-zenhei-subset.b64.js"></script>
+<script src="app.js"></script>
+
+<script>
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("sw.js").catch(() => {
+      /* Sin service worker disponible (p.ej. abierto como file:// en vez de https://):
+         la app sigue funcionando, solo sin el precaché para modo offline. */
+    });
+  });
+}
+</script>
+</body>
+</html>

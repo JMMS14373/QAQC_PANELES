@@ -1,0 +1,17 @@
+{
+  "name": "QAQC Paneles - Taladros Largos",
+  "short_name": "QAQC Paneles",
+  "description": "Ficha digital bilingue ES/ZH de inspeccion QA/QC para paneles de explotacion por taladros largos (long hole stoping).",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0F1923",
+  "theme_color": "#F2701D",
+  "lang": "es",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

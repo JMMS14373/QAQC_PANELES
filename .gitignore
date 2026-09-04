@@ -1,0 +1,30 @@
+# QAQC Paneles — .gitignore
+# La app es HTML/JS estático (sin build, sin Node, sin dependencias), así que este
+# archivo es corto: solo evita basura de sistema operativo/editor y, sobre todo,
+# evita que alguien suba por accidente un archivo Maestro real (con nombres de
+# inspectores, supervisores, paneles, etc.) al repositorio público.
+
+# Sistema operativo
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editores de código
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Archivos de Excel/CSV: la app NO necesita ninguno subido al repo (el maestro real
+# se carga dentro de la app y queda solo en el dispositivo, nunca en git) — este
+# bloqueo evita que alguien suba por error el Maestro_Paneles.xlsx real u otra
+# copia de trabajo a la carpeta del repositorio.
+*.xlsx
+*.xlsm
+*.xls
+*.csv
+
+# Copias de prueba / borradores locales
+*.local.*
+*.bak
+*.tmp
