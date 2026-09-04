@@ -23,6 +23,16 @@
     const d = new Date();
     return d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0") + "-" + String(d.getDate()).padStart(2,"0");
   }
+  // Fecha "de negocio" para el turno: turno día 06:00-18:00, turno noche
+  // 18:00-05:59. Entre medianoche y las 5:59am se sigue considerando parte
+  // del turno noche que empezó la noche anterior, así que la fecha por
+  // defecto NO salta al día siguiente a las 00:00 -- se queda en el día en
+  // que arrancó el turno noche hasta las 6:00am.
+  function businessDateISO(){
+    const d = new Date();
+    if (d.getHours() < 6) d.setDate(d.getDate() - 1);
+    return d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0") + "-" + String(d.getDate()).padStart(2,"0");
+  }
   function genId(){
     const d = new Date();
     const ymd = d.getFullYear() + String(d.getMonth()+1).padStart(2,"0") + String(d.getDate()).padStart(2,"0");
@@ -41,6 +51,35 @@
   }
   function stripAccents(s){
     return String(s||"").normalize("NFD").replace(/[̀-ͯ]/g,"");
+  }
+  /* ============================================================
+     Ventana de tiempo del turno, para "Completar firmas pendientes".
+     Turno día: 06:00-17:59. Turno noche: 18:00-05:59 (del día siguiente).
+     Pasada esa ventana ya NO se puede completar una firma pendiente de ese
+     registro -- la firma pierde sentido fuera del turno al que pertenece.
+     ============================================================ */
+  function turnoEsNoche(turno){
+    const t = stripAccents(String(turno||"")).toLowerCase();
+    return t.indexOf("noche") !== -1 || t.indexOf("night") !== -1;
+  }
+  function shiftWindowForRecord(header){
+    const fecha = header && header.fecha;
+    if (!fecha || !/^\d{4}-\d{2}-\d{2}$/.test(fecha)) return null;
+    const [y, m, d] = fecha.split("-").map(Number);
+    let start, end;
+    if (turnoEsNoche(header.turno)){
+      start = new Date(y, m-1, d, 18, 0, 0);
+      end = new Date(y, m-1, d+1, 5, 59, 0);
+    } else {
+      start = new Date(y, m-1, d, 6, 0, 0);
+      end = new Date(y, m-1, d, 17, 59, 0);
+    }
+    return {start, end};
+  }
+  function canCompleteSignatures(rec){
+    const win = shiftWindowForRecord(rec.header);
+    if (!win) return true; // fecha no reconocible: no bloqueamos por seguridad
+    return new Date() <= win.end;
   }
   function normHeader(s){
     let t = String(s||"").split("/")[0]; // quita sufijo bilingüe "... / 中文"
@@ -131,7 +170,7 @@
         const opts = (MASTER[f.list]||[]).map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join("");
         control = `<select data-key="${f.key}">${opts}</select>`;
       } else if (f.type === "date"){
-        control = `<input type="date" data-key="${f.key}" value="${todayISO()}">`;
+        control = `<input type="date" data-key="${f.key}" value="${businessDateISO()}">`;
       } else if (f.type === "text_list"){
         const listId = "dl_" + f.key;
         const opts = (MASTER[f.list]||[]).map(v => `<option value="${esc(v)}">`).join("");
@@ -408,9 +447,12 @@
       }).join("");
       return `<div class="detail-group"><h5>${esc(g.es)} <span style="color:var(--ink-soft);font-weight:400">${esc(g.zh)}</span></h5>${rows}</div>`;
     }).join("");
+    const pendingSigners = SIGNERS.filter(s => !(rec.signatures[s.key] && rec.signatures[s.key].dataUrl));
+    const sigWindowOpen = canCompleteSignatures(rec);
     const sigStrip = SIGNERS.map(s => {
       const sd = rec.signatures[s.key] || {};
-      const img = sd.dataUrl ? `<img src="${sd.dataUrl}">` : `<div style="width:120px;height:44px;background:var(--surface-2);border:1px solid var(--border-soft);border-radius:6px"></div>`;
+      const img = sd.dataUrl ? `<img src="${sd.dataUrl}">`
+        : `<div style="width:120px;height:44px;background:var(--surface-2);border:1px solid var(--border-soft);border-radius:6px"></div>`;
       return `<div class="sigmini">${img}<div>${esc(s.es)}${sd.name ? " — " + esc(sd.name) : ""}${sd.ts ? " · " + esc(sd.ts) : ""}</div></div>`;
     }).join("");
 
@@ -421,6 +463,7 @@
           <div class="record-top">
             <span class="record-id">${esc(rec.id)}</span>
             <span class="record-pct">${pct == null ? "—" : pct + "%"} cumplimiento</span>
+            ${pendingSigners.length ? (sigWindowOpen ? `<span class="pill bad">Firma pendiente / 待签名</span>` : `<span class="pill na">Firma vencida / 签名已过期</span>`) : ""}
           </div>
           <div class="record-title">${esc(h.labor || "Labor s/d")} · ${esc(h.categoriaExplotacion || "")}</div>
           <div class="record-meta">
@@ -438,6 +481,10 @@
         <div class="sig-strip">${sigStrip}</div>
         <div class="record-actions">
           <button type="button" class="btn btn-primary btn-sm" data-act="export-pdf" data-id="${esc(rec.id)}">Descargar PDF <span style="opacity:.8;font-weight:500">/ 下载PDF</span></button>
+          ${pendingSigners.length ? (sigWindowOpen
+            ? `<button type="button" class="btn btn-ghost btn-sm" data-act="complete-sig" data-id="${esc(rec.id)}">Completar firmas (${pendingSigners.length}) <span style="opacity:.8;font-weight:500">/ 补签(${pendingSigners.length})</span></button>`
+            : `<button type="button" class="btn btn-ghost btn-sm" disabled title="El turno de este registro ya terminó / 该记录所属班次已结束">Firma vencida (${pendingSigners.length}) <span style="opacity:.8;font-weight:500">/ 签名已过期</span></button>`
+          ) : ""}
           <button type="button" class="btn btn-ghost btn-sm" data-act="export-xlsx" data-id="${esc(rec.id)}">Descargar Excel</button>
           <button type="button" class="btn btn-ghost btn-sm" data-act="export-csv" data-id="${esc(rec.id)}">CSV</button>
           <button type="button" class="btn btn-ghost btn-sm" data-act="delete" data-id="${esc(rec.id)}">Eliminar</button>
@@ -476,9 +523,143 @@
   });
 
   /* ============================================================
+     Completar firmas pendientes de un registro YA guardado.
+     No permite tocar el resto del registro (checklist, encabezado,
+     firmas ya confirmadas) -- solo agrega las firmas que faltaban,
+     pensado para el caso de un inspector que registra varias fichas
+     bajo tierra sin señal, y solo al llegar a superficie (con la
+     persona indicada presente) completa la firma que faltaba.
+     ============================================================ */
+  let completeSigState = {};
+  let completeSigRecordId = null;
+
+  function openCompleteSignaturesModal(rec){
+    if (!canCompleteSignatures(rec)){
+      toast("El turno de este registro ya terminó -- no se puede firmar fuera de su ventana de tiempo / 该记录所属班次已结束，无法在时间窗口外签名", 4000);
+      return;
+    }
+    const pending = SIGNERS.filter(s => !(rec.signatures[s.key] && rec.signatures[s.key].dataUrl));
+    if (!pending.length){ toast("Este registro ya tiene todas las firmas / 该记录已完成全部签名"); return; }
+
+    completeSigRecordId = rec.id;
+    completeSigState = {};
+
+    const body = document.getElementById("sigModalBody");
+    body.innerHTML = pending.map(s => `
+      <div class="sig-card" data-signer="${esc(s.key)}">
+        <h4>${esc(s.es)}</h4><div class="zh">${esc(s.zh)}</div>
+        <div class="sig-name">${esc(rec.header[s.nameField] || "—")}</div>
+        <div class="sig-pad-wrap"><canvas class="sig-pad"></canvas></div>
+        <div class="sig-actions">
+          <button type="button" class="sig-btn" data-role="clear">Limpiar</button>
+          <button type="button" class="sig-btn confirm" data-role="confirm">Confirmar</button>
+        </div>
+        <div class="sig-status" data-role="sigstatus">Sin firmar / 未签名</div>
+      </div>
+    `).join("");
+
+    pending.forEach(s => {
+      const card = body.querySelector(`[data-signer="${s.key}"]`);
+      const canvas = card.querySelector("canvas");
+      setupPad(canvas);
+      completeSigState[s.key] = {name:"", dataUrl:"", ts:""};
+
+      card.querySelector('[data-role="clear"]').addEventListener("click", () => {
+        clearPad(canvas); completeSigState[s.key] = {name:"", dataUrl:"", ts:""};
+        const st = card.querySelector('[data-role="sigstatus"]');
+        st.textContent = "Sin firmar / 未签名"; st.classList.remove("done");
+      });
+      card.querySelector('[data-role="confirm"]').addEventListener("click", () => {
+        if (canvas.dataset.blank !== "false"){ toast("Dibuje la firma antes de confirmar"); return; }
+        completeSigState[s.key] = {
+          name: rec.header[s.nameField] || "",
+          dataUrl: canvas.toDataURL("image/png"),
+          ts: nowStamp()
+        };
+        const st = card.querySelector('[data-role="sigstatus"]');
+        st.textContent = "Firmado " + completeSigState[s.key].ts; st.classList.add("done");
+        toast(s.es + " confirmada");
+      });
+    });
+
+    document.getElementById("sigModalBackdrop").hidden = false;
+  }
+
+  function closeCompleteSignaturesModal(){
+    document.getElementById("sigModalBackdrop").hidden = true;
+    document.getElementById("sigModalBody").innerHTML = "";
+    completeSigState = {};
+    completeSigRecordId = null;
+  }
+
+  document.getElementById("sigModalClose").addEventListener("click", closeCompleteSignaturesModal);
+  document.getElementById("sigModalCancel").addEventListener("click", closeCompleteSignaturesModal);
+  document.getElementById("sigModalBackdrop").addEventListener("click", (e) => {
+    if (e.target.id === "sigModalBackdrop") closeCompleteSignaturesModal();
+  });
+  document.getElementById("sigModalSave").addEventListener("click", () => {
+    const newlySigned = Object.keys(completeSigState).filter(k => completeSigState[k].dataUrl);
+    if (!newlySigned.length){ toast("No hay firmas nuevas para guardar / 没有新的签名可保存"); return; }
+    const recs = getRecords();
+    const idx = recs.findIndex(r => r.id === completeSigRecordId);
+    if (idx === -1){ toast("No se encontró el registro / 未找到该记录"); closeCompleteSignaturesModal(); return; }
+    newlySigned.forEach(k => { recs[idx].signatures[k] = completeSigState[k]; });
+    setRecords(recs);
+    renderArchive();
+    toast(newlySigned.length + " firma(s) guardada(s) / 已保存签名");
+    closeCompleteSignaturesModal();
+  });
+
+  /* ============================================================
      Archivo: listado + estadísticas + acciones por registro
      ============================================================ */
+  /* ============================================================
+     Aviso de capacidad de almacenamiento del dispositivo.
+     Todo el archivo (fichas + fotos + firmas en base64) vive en el
+     almacenamiento local del navegador de ese celular/tablet -- no hay una
+     "carpeta" con un tamaño fijo, pero ese almacenamiento sí tiene un límite
+     práctico en el dispositivo. Usamos navigator.storage.estimate() cuando
+     el navegador lo soporta (da el uso/cupo real de ese origen); si no está
+     disponible, se calcula un estimado aproximado a partir del tamaño de lo
+     guardado en localStorage.
+     ============================================================ */
+  async function checkStorageUsage(){
+    const box = document.getElementById("storageWarning");
+    let pct = null;
+    try{
+      if (navigator.storage && navigator.storage.estimate){
+        const {usage, quota} = await navigator.storage.estimate();
+        if (quota) pct = Math.round((usage / quota) * 1000) / 10;
+      }
+    } catch(e){ /* estimate no disponible en este navegador */ }
+
+    if (pct == null){
+      // Estimado aproximado de respaldo: tamaño de lo guardado en
+      // localStorage contra un cupo conservador de 5MB (mínimo típico
+      // garantizado en navegadores móviles para este tipo de almacenamiento).
+      try{
+        let bytes = 0;
+        for (let i = 0; i < localStorage.length; i++){
+          const k = localStorage.key(i);
+          bytes += (k.length + (localStorage.getItem(k)||"").length) * 2; // UTF-16 ~2 bytes/char
+        }
+        pct = Math.round((bytes / (5*1024*1024)) * 1000) / 10;
+      } catch(e){ pct = null; }
+    }
+
+    if (pct == null || pct < 70){ box.hidden = true; box.innerHTML = ""; return; }
+
+    const critical = pct >= 90;
+    box.hidden = false;
+    box.className = "storage-warning " + (critical ? "critical" : "warn");
+    box.innerHTML = `<span class="sw-icon">${critical ? "⛔" : "⚠️"}</span>
+      <span>El almacenamiento de este dispositivo está aproximadamente al <b>${pct}%</b>.
+      Exporta (PDF/Excel) los registros que necesites y luego usa "Eliminar" o "Eliminar todos los registros" para liberar espacio y no perder información.
+      <span class="zh">此设备的存储空间大约已使用 ${pct}%。请导出（PDF/Excel）所需的记录，然后使用"删除"或"删除全部记录"释放空间，避免信息丢失。</span></span>`;
+  }
+
   function renderArchive(){
+    checkStorageUsage();
     const recs = getRecords();
     const list = document.getElementById("recordsList");
     const statsRow = document.getElementById("statsRow");
@@ -502,6 +683,7 @@
           if (act === "export-pdf") downloadRecordPDF(rec);
           if (act === "export-xlsx") exportOneXLSX(rec);
           if (act === "export-csv") downloadCSV(buildRegistroRows([rec]), fileBase(rec) + ".csv");
+          if (act === "complete-sig") openCompleteSignaturesModal(rec);
         });
       });
     }
@@ -1008,11 +1190,83 @@
     }
   }
 
+  /* ============================================================
+     JSZip diferido (solo si hay internet), igual que SheetJS/jsPDF --
+     se usa para empaquetar varios PDF en un solo .zip (flujo típico:
+     el inspector registra 3-4 fichas bajo tierra sin señal, y ya en
+     superficie, con señal, descarga todos los PDF de una sola vez
+     para compartirlos por correo).
+     ============================================================ */
+  let zipLoadPromise = null;
+  function ensureZIP(){
+    if (typeof JSZip !== "undefined") return Promise.resolve(true);
+    if (!navigator.onLine) return Promise.resolve(false);
+    if (zipLoadPromise) return zipLoadPromise;
+    zipLoadPromise = new Promise((resolve) => {
+      const s = document.createElement("script");
+      s.src = "https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js";
+      s.onload = () => resolve(typeof JSZip !== "undefined");
+      s.onerror = () => resolve(false);
+      document.head.appendChild(s);
+    });
+    return zipLoadPromise;
+  }
+
+  async function downloadAllRecordsPDF(){
+    const recs = getRecords();
+    if (!recs.length){ toast("No hay registros / 没有记录"); return; }
+
+    toast("Generando " + recs.length + " PDF... / 正在生成" + recs.length + "个PDF");
+    const [okPdf, okZip] = await Promise.all([ensurePDF(), ensureZIP()]);
+    if (!okPdf || !okZip){
+      toast("Necesitas conexión a internet para generar los PDF la primera vez / 首次生成PDF需要联网");
+      return;
+    }
+
+    try{
+      const zip = new JSZip();
+      const usedNames = {};
+      for (const rec of recs){
+        const doc = buildRecordPDF(rec);
+        let name = fileBase(rec) + ".pdf";
+        if (usedNames[name] != null){
+          usedNames[name]++;
+          name = fileBase(rec) + "_" + usedNames[name] + ".pdf";
+        } else {
+          usedNames[name] = 0;
+        }
+        zip.file(name, doc.output("arraybuffer"));
+      }
+      const blob = await zip.generateAsync({type:"blob"});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = "QAQC_Paneles_PDFs_" + todayISO() + ".zip";
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 4000);
+      toast(recs.length + " PDF descargados en un .zip / " + recs.length + "个PDF已打包下载");
+    } catch(e){
+      console.error(e);
+      toast("No se pudo generar el paquete de PDF / 无法生成PDF压缩包");
+    }
+  }
+
+  document.getElementById("btnExportAllPdf").addEventListener("click", downloadAllRecordsPDF);
   document.getElementById("btnExportAllXlsx").addEventListener("click", exportAllXLSX);
   document.getElementById("btnExportAllCsv").addEventListener("click", () => {
     const recs = getRecords();
     if (!recs.length){ toast("No hay registros / 没有记录"); return; }
     downloadCSV(buildRegistroRows(recs), "BD_QAQC_Paneles_" + todayISO() + ".csv");
+  });
+  document.getElementById("btnDeleteAll").addEventListener("click", () => {
+    const recs = getRecords();
+    if (!recs.length){ toast("No hay registros / 没有记录"); return; }
+    if (!confirm(
+      `¿Eliminar los ${recs.length} registros guardados en este dispositivo? Asegúrate de haberlos exportado antes (PDF/Excel) -- esta acción no se puede deshacer.\n` +
+      `确定删除本设备上保存的 ${recs.length} 条记录吗？请确认已导出（PDF/Excel）-- 此操作无法撤销。`
+    )) return;
+    setRecords([]);
+    renderArchive();
+    toast("Registros eliminados / 记录已删除");
   });
 
   /* ============================================================

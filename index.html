@@ -186,6 +186,20 @@
   .sig-status{ font-size:11px; margin-top:6px; font-weight:600; color:var(--ink-soft); }
   .sig-status.done{ color:var(--good-ink); }
 
+  /* ---------- Modal: completar firmas pendientes ---------- */
+  .modal-backdrop{ position:fixed; inset:0; background:rgba(6,10,14,.65); display:flex; align-items:flex-end; justify-content:center; z-index:50; padding:0; }
+  .modal-backdrop[hidden]{ display:none; }
+  @media (min-width:640px){ .modal-backdrop{ align-items:center; padding:20px; } }
+  .modal-card{ background:var(--paper); border:1px solid var(--border-soft); border-radius:var(--radius) var(--radius) 0 0; box-shadow:var(--shadow); width:100%; max-width:640px; max-height:92vh; display:flex; flex-direction:column; overflow:hidden; }
+  @media (min-width:640px){ .modal-card{ border-radius:var(--radius); } }
+  .modal-head{ display:flex; align-items:flex-start; justify-content:space-between; gap:10px; padding:16px 18px; border-bottom:1px solid var(--border-soft); }
+  .modal-head h3{ margin:0; font-family:"Barlow Condensed"; font-size:20px; }
+  .modal-head .zh{ font-size:12px; color:var(--ink-soft); }
+  .modal-close{ appearance:none; border:none; background:var(--surface-2); color:var(--ink-soft); width:30px; height:30px; border-radius:8px; font-size:15px; cursor:pointer; flex:none; }
+  .modal-body{ padding:16px 18px; overflow-y:auto; display:grid; gap:14px; }
+  .modal-foot{ display:flex; gap:8px; justify-content:flex-end; padding:14px 18px; border-top:1px solid var(--border-soft); }
+  .modal-note{ font-size:12.5px; color:var(--ink-soft); }
+
   /* ---------- Action bar ---------- */
   .actionbar{
     position:sticky; bottom:0; margin-top:22px; padding:14px 16px; background:var(--surface);
@@ -216,6 +230,12 @@
 
   .toolbar-row{ display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; margin-bottom:14px; }
   .toolbar-row .btns{ display:flex; gap:8px; flex-wrap:wrap; }
+
+  .storage-warning{ display:flex; align-items:center; gap:10px; padding:12px 14px; border-radius:var(--radius); margin-bottom:14px; font-size:13px; line-height:1.4; }
+  .storage-warning.warn{ background:var(--accent-soft); border:1px solid var(--accent); color:var(--accent-text); }
+  .storage-warning.critical{ background:var(--bad-soft); border:1px solid var(--bad); color:var(--bad-ink); }
+  .storage-warning .zh{ display:block; font-size:11.5px; opacity:.85; margin-top:2px; }
+  .storage-warning .sw-icon{ font-size:20px; flex:none; }
 
   .empty-state{ text-align:center; padding:48px 20px; color:var(--ink-soft); }
 
@@ -310,11 +330,16 @@
 
   <!-- ============ VISTA: ARCHIVO ============ -->
   <section id="view-archivo" class="view">
+    <div class="storage-warning" id="storageWarning" hidden></div>
     <div class="stats-row" id="statsRow"></div>
     <div class="toolbar-row">
       <div class="btns">
+        <button class="btn btn-primary btn-sm" id="btnExportAllPdf" type="button">Descargar todos los PDF (.zip) <span style="opacity:.8;font-weight:500">/ 下载全部PDF</span></button>
         <button class="btn btn-ghost btn-sm" id="btnExportAllXlsx" type="button">Descargar Excel (todo) <span style="opacity:.75">/ 下载全部Excel</span></button>
         <button class="btn btn-ghost btn-sm" id="btnExportAllCsv" type="button">CSV</button>
+      </div>
+      <div class="btns">
+        <button class="btn btn-ghost btn-sm" id="btnDeleteAll" type="button" style="color:var(--bad-ink); border-color:var(--bad)">Eliminar todos los registros <span style="opacity:.75">/ 删除全部记录</span></button>
       </div>
     </div>
     <div id="recordsList"></div>
@@ -374,6 +399,24 @@
 </div>
 
 <div class="toast" id="toast"></div>
+
+<div class="modal-backdrop" id="sigModalBackdrop" hidden>
+  <div class="modal-card">
+    <div class="modal-head">
+      <div>
+        <h3>Completar firmas pendientes</h3>
+        <div class="zh">补签未完成的签名</div>
+      </div>
+      <button type="button" class="modal-close" id="sigModalClose" aria-label="Cerrar">✕</button>
+    </div>
+    <div class="modal-body" id="sigModalBody"></div>
+    <div class="modal-foot">
+      <div class="modal-note" style="margin-right:auto; align-self:center;">Solo se guardan las firmas nuevas que confirmes aquí.<br>只保存在此处确认的新签名。</div>
+      <button type="button" class="btn btn-ghost btn-sm" id="sigModalCancel">Cancelar</button>
+      <button type="button" class="btn btn-primary btn-sm" id="sigModalSave">Guardar firmas</button>
+    </div>
+  </div>
+</div>
 
 <script>
 window.__QAQC_GRUPOS__ = [{"es": "1. VENTILACIÓN/ SERVICIOS AUXILIARES", "zh": "1. 通风/辅助服务", "items": [{"es": "Tablero de gases (se encuentra actualizado)", "zh": "气体检测板（是否已更新）"}, {"es": "Atmósfera minera [registre los datos de lectura del multidetector: Oxígeno (O2) 19.5%-23.5%; Monóxido (CO) <10 ppm; Dióxido de Carbono (CO2) < 1000 ppm; Dióxido de Nitrógeno (NO2) < 1 ppm ; Dióxido de Carbono (CO2) < 0.5% ;Metáno (CH4) < 1.0% ]", "zh": "矿井空气[记录多功能检测仪读数：氧气(O2) 19.5%-23.5%；一氧化碳(CO) <10 ppm；二氧化碳(CO2) <1000 ppm；二氧化氮(NO2) <1 ppm；二氧化碳(CO2) <0.5%；甲烷(CH4) <1.0%]"}, {"es": "Estado ductos de ventilación (distancia al frente de avance 30m, sin fugas, bien acoplado).", "zh": "风筒布状态（距掘进工作面30米，无泄漏，连接良好）。"}, {"es": "Estado de ventiladores (presenta vibración, ruidos anómalos)", "zh": "风机状态（是否存在振动、异常噪声）"}, {"es": "Sensación térmica (describa si es alta o normal)", "zh": "体感温度（说明温度较高或正常）"}, {"es": "Linea de agua al frente de trabajo a 30m, (tiene antilatigo en la flauta), señalizadas color verde", "zh": "工作面供水管线距工作面30米（软管端部配有防甩装置），以绿色标识"}, {"es": "Linea de aire comprimido al frente de trabajo a 30m (tiene antilatigo en la flauta) Señalizadas en color azul", "zh": "工作面压缩空气管线距工作面30米（软管端部配有防甩装置），以蓝色标识"}]}, {"es": "2.ELECTRICOS", "zh": "2. 电气", "items": [{"es": "Distancia del ultimo nicho hasta la cara libre del panel", "zh": "最后一个配电壁龛至矿房自由面的距离"}, {"es": "Estándar del nicho ( orden y aseo, soporte, condiciones de humedad, tipo de piso \"losa\",iluminación, señalizacion, extintor, cajas electricas)", "zh": "硐室标准（整齐清洁、支护、湿度条件、地面类型“混凝土板”、照明、标识、灭火器、电气箱）"}, {"es": "Extensiones electricas ( Esta prohibido el uso de extensiones electricas reportar)", "zh": "电源延长线（禁止使用电源延长线，如有使用须报告）"}, {"es": "Linea de energía electrica (distancia al frente de avance 30m máximo, sin golpes, añadiduras, sin presencia de agua)", "zh": "电力线（距掘进工作面最大30米，无撞击、接头及积水）"}, {"es": "Ganchos de servicios eléctricos (espaciados cada 3m, instalados de manera adecuada)", "zh": "电气服务挂钩（间距3米，安装正确）"}, {"es": "Señal de radio en la labor y estado del cable ( Leaky feeder)", "zh": "作业区域无线电信号及电缆状态（Leaky Feeder / 漏水喂食器）"}]}, {"es": "3. SOSTENIMIENTO", "zh": "3. 支护", "items": [{"es": "Tipo de soporte: Tipo I, II, III, IV, V", "zh": "支护类型：I、II、III、IV、V型"}, {"es": "Estado del soporte instalado area de perforacion del panel (concreto agrietado, mallas deterioradas y cargadas, áreas sin soporte).", "zh": "矿房钻孔区域已安装支护状态（混凝土开裂、网片损坏或受载、无支护区域）。"}, {"es": "Espesor de la capa de concreto, zonas sin cobertura, concreto fracturado.", "zh": "混凝土层厚度、无覆盖区域、破碎混凝土。"}, {"es": "Estación de desabombe (zona seguridad, señalizada, patrón de barras y estado de estas)", "zh": "撬棍站（安全区域、标识、钢筋布置模式及其状态）"}, {"es": "Estado del soporte instalado 100m lineales antes de la cara libre del panel (concreto agrietado, mallas deterioradas y cargadas, áreas sin soporte)", "zh": "矿房自由面前方100米范围内已安装支护状态（混凝土开裂、网片损坏或受载、无支护区域）"}]}, {"es": "4.PREPARACIÓN DEL FRENTE", "zh": "4. 工作面准备", "items": [{"es": "¿Hay material, rocas sueltas, detritos, etc., producto de la voladura anterior?", "zh": "是否存在上次爆破产生的材料、松散岩石、碎屑等？"}, {"es": "¿El piso se encuentra nivelado?", "zh": "地面是否平整？"}, {"es": "¿Hay empozamiento de agua que comprometan la operatividad del equipo al transitar ?", "zh": "是否存在影响设备通行和运行的积水？"}, {"es": "¿Hay empozamiento de agua en el lugar donde se ubicará el equipo?", "zh": "设备将要停放的位置是否有积水？"}, {"es": "¿Hay barrenos para reperforar?, indique cuantos.", "zh": "是否有需要重新钻孔的炮孔？请注明数量。"}]}, {"es": "5.SEGURIDAD", "zh": "5. 安全", "items": [{"es": "¿El panel cuenta con cadena de señalización en la cara libre?", "zh": "矿房自由面是否设置警示链条？"}, {"es": "¿El ingreso al panel se encuentra nomenclado?", "zh": "矿房入口是否已编号？"}, {"es": "¿Se dispone de manguera HDPE para el encamisado de nuevas líneas?", "zh": "是否有HDPE软管用于新孔线套管？"}, {"es": "¿El panel cuenta con las 6 líneas de seguridad barrenadas y encamisadas? (lineas de colchón)", "zh": "矿房是否已完成6条安全线的钻孔和套管？（缓冲线）"}, {"es": "En caso de no contar con las 6 líneas de seguridad, averiguar si corresponde a labor de condición de actividad no rutinaria.", "zh": "如未完成6条安全线，请确认是否属于非例行活动条件的作业。"}, {"es": "¿Se mantiene el orden y aseo a lo largo de la labor?", "zh": "整个作业区域是否保持整齐和清洁？"}]}, {"es": "6.LINEA DE VIDA STOPE", "zh": "6. 采场生命线", "items": [{"es": "Tipo de perno: Split Set galvanizado de 2,10 m para malla y perno helicoidal de mínimo 2,10 m para concreto lanzado.", "zh": "锚杆类型：网片使用2.10米镀锌锚杆，喷射混凝土使用长度至少2.10米的钢筋锚杆。"}, {"es": "Verificar Línea de vida en buen estado, sin golpes ni deterioro.", "zh": "检查生命线状态良好，无撞击或损坏。"}, {"es": "Verificar Pernos en buen estado, sin deformaciones ni daños.", "zh": "检查锚杆状态良好，无变形或损坏。"}, {"es": "¿La Altura promedio de los pernos instalados esta entre 1,50 m y 1,80 m?", "zh": "已安装锚杆的平均高度是否在1.50米至1.80米之间？"}, {"es": "¿La Separación entre pernos es de máximo 3,00 m en línea horizontal?", "zh": "水平线上锚杆间距是否最大为3.00米？"}, {"es": "¿La Platina con el perno esta separada mínimo 10 centímetros del hastial?", "zh": "锚杆托盘与巷道帮壁之间的距离是否至少为10厘米？"}, {"es": "¿ la Línea de vida esta instalada dentro del área de influencia del panel?", "zh": "生命线是否安装在矿房影响区域内？"}, {"es": "¿ La Línea de vida esta instalada hasta 10 m atrás de la cara libre del panel?", "zh": "生命线是否安装至矿房自由面后方10米处？"}, {"es": "Verificar nudo ballestrinque en cada perno.", "zh": "检查每根锚杆上的双套结是否正确。"}, {"es": "Verificar que no haya catenarias pronunciadas entre pernos.", "zh": "检查锚杆之间是否存在明显的悬垂弧度。"}, {"es": "Verificar que se encuentre correctamente realizado el ponchado de la linea de vida", "zh": "检查生命线压接是否正确完成"}, {"es": "La línea de vida está aprobada y cuenta con el precinto de seguridad en el cabo del extremo.", "zh": "生命线已获批准，端部绳头配有安全封条。"}], "nota": {"es": "Aplica solo si la Categoría de explotación es STOPE.", "zh": "仅当开采类别为STOPE（下向孔矿房）时适用。"}}, {"es": "8.CABLE BOLT", "zh": "8. Cable Bolt", "items": [{"es": "Todos los Cable Bolts se encuentran marcados de acuerdo al plan (aerosol azul, número de puntos marcados).", "zh": "所有Cable Bolt均按照计划进行标记（蓝色喷漆及标记点数量）。"}, {"es": "¿Es necesario remarcar? (¿Hasta qué línea se encuentran marcados?)", "zh": "是否需要重新标记？（已标记到哪一排？）"}]}, {"es": "9. FASE CABLE BOLT", "zh": "9. Cable Bolt阶段", "items": [{"es": "Perforación: ¿Cuántos barrenos Cable Bolts se encuentran perforados y hasta qué línea y de que longitud (6m / 10m)?", "zh": "钻孔：已钻孔的锚索孔有多少个？钻到哪一排？长度是多少（6米/10米）？"}, {"es": "¿Cuanto cables del total se encuentran calafateados?, indicar tiempo de fraguado.", "zh": "所有锚索中有多少根已封堵？请注明胶结时间。"}, {"es": "Inyección: ¿Cuántos Cable Bolts se encuentran inyectados y hasta qué línea están inyectados?", "zh": "注浆：已注浆的锚索有多少根？注浆到哪一排？"}, {"es": "Inyección: ¿Se observa retorno en la manguera?", "zh": "注浆：软管中是否观察到回流？"}, {"es": "Inyección: ¿Cuánto tiempo lleva de fraguado?", "zh": "注浆：已胶结多长时间？"}, {"es": "Tensión: ¿Cuántos Cable Bolts se encuentran tensionados y hasta qué línea están tensionados?", "zh": "张拉：已有多少根锚索完成拉紧？拉紧到哪一排？"}, {"es": "Tensión: ¿A cuántos bares fueron tensionados? ¿Tienen el Barril y la planchuela?", "zh": "拉紧：拉紧压力是多少bar？是否配有桶形组件（Barril）和钢板（planchuela）？"}, {"es": "¿A que distancia de la cara libre se encuentra los Cable Bolts?", "zh": "锚索距离自由面多远？"}]}, {"es": "10. MARCACIÓN", "zh": "10. 标记", "items": [{"es": "Línea de inicio y fin del panel. (¿Se encuentran marcadas? ¿Es necesario remarcar?)", "zh": "矿房起始线和终止线。（是否已标记？是否需要重新标记？）"}, {"es": "Líneas de SLOT marcadas S1–S6. (¿Se encuentran marcadas?)", "zh": "拉槽孔S1–S6已标记。（是否已标记？）"}, {"es": "Se encuentran marcadas las líneas de PRODUCCIÓN R1–R?. ¿Indique hasta qué línea de producción está la marcación?", "zh": "生产线R1–R?是否已标记？请注明标记到哪一条生产线。"}, {"es": "Puntos de ruptura. (¿Se encuentran marcados? ¿Es necesario remarcar?)", "zh": "断裂点。（是否已标记？是否需要重新标记？）"}, {"es": "¿Hay suficientes líneas marcadas? (Mínimo 6 líneas de ventaja).", "zh": "标记线是否足够？（至少6条超前线）。"}]}, {"es": "11.PERFORACIÓN", "zh": "11. 钻孔", "items": [{"es": "¿Con qué equipo se está perforando? (Sandvik 210, Sandvik 2710, Epiroc Simba, Huatai).", "zh": "使用什么设备进行钻孔？（山特维克210、山特维克2710、安百拓、华泰）。"}, {"es": "¿El equipo cuenta con inclinómetro operativo y calibrado? Si no cumple, indicar con qué se está realizando la medición.", "zh": "设备是否配有正常运行且已校准的倾角仪？如不符合，请注明使用何种方式进行测量。"}, {"es": "¿Cuánto desfase hay entre el eje de alineación y el punto de penetración de la broca? Tomar medida.", "zh": "对齐轴线与钻头进入点之间的偏差是多少？请测量。"}, {"es": "¿En qué línea se encuentra la perforación?", "zh": "钻孔目前进行到哪一排？"}, {"es": "¿Los barrenos de las líneas de seguridad están encamisados? En caso de no cumplir, indicar cuántos no están encamisados.", "zh": "安全线炮孔是否已套管？如不符合，请注明未套管的数量。"}, {"es": "¿El emboquille cumple con el diseño? En caso de no cumplir, indicar si se debe a la mesa del equipo, a la condición del terreno u otro motivo indicado por el operador.", "zh": "孔口位置是否符合设计？如不符合，请注明是由于设备钻台、地质条件或操作员说明的其他原因。"}, {"es": "¿Los barrenos de las líneas de producción están encamisados? En caso de no cumplir, indicar cuántos no están encamisados.", "zh": "生产线炮孔是否已套管？如不符合，请注明未套管的数量。"}, {"es": "¿Se esta cumpliendo con el patron indicado en el plan? En caso de no cumplir indicar la razón.", "zh": "是否按照计划规定的布置模式执行？如不符合，请说明原因。"}]}, {"es": "12.VOLADURA (Solo si estan en cargue )", "zh": "12. 爆破（仅在装药时）", "items": [{"es": "Indicar en qué línea va la perforación y en qué línea va la voladura.", "zh": "注明钻孔进行到哪一排，以及爆破进行到哪一排。"}, {"es": "Indicar cuántas líneas y el número de barrenos que saldrán con la siguiente voladura.", "zh": "注明下一次爆破将起爆多少排以及炮孔数量。"}, {"es": "¿Se está cargando de acuerdo con el estándar: 1 m = 2,4 kg de Anfo?", "zh": "是否按照标准装药：1米=2.4公斤ANFO？"}], "nota": {"es": "Aplica solo durante actividad de carguío de explosivos.", "zh": "仅在装药作业期间适用。"}}];
