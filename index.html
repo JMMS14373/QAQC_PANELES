@@ -170,6 +170,35 @@
     position:absolute; top:-6px; right:-6px; width:18px; height:18px; border-radius:50%;
     background:var(--bad); color:#fff; border:2px solid var(--surface); font-size:11px; line-height:1; cursor:pointer;
   }
+  .thumb-caption{
+    position:absolute; left:0; right:0; bottom:0; background:rgba(15,25,35,.82); color:var(--accent-text);
+    font-size:8.5px; font-weight:700; text-align:center; padding:2px 1px; border-radius:0 0 6px 6px;
+    line-height:1.2; pointer-events:none;
+  }
+
+  .dist-row{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding:6px 8px; background:var(--surface-2); border:1px solid var(--border-soft); border-radius:7px; }
+  .dist-row[hidden]{ display:none; }
+  .dist-row label{ font-size:11.5px; font-weight:600; color:var(--ink-soft); white-space:nowrap; }
+  .dist-row label .zh{ display:block; font-size:10px; font-weight:500; opacity:.85; }
+  .dist-row input{ width:72px; flex:none; padding:5px 8px; font-size:13px; }
+  .dist-row .dist-m{ font-size:12px; color:var(--accent-text); font-weight:600; }
+
+  .step-counter-card{ padding:14px 16px; display:flex; flex-direction:column; gap:10px; }
+  .step-counter-row{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+  .step-counter-display{ display:flex; align-items:baseline; gap:6px; font-family:"IBM Plex Mono"; }
+  .step-counter-display[hidden]{ display:none; }
+  .step-counter-display .step-num{ font-size:20px; font-weight:700; color:var(--accent-text); }
+  .step-counter-display .step-lbl{ font-size:12px; color:var(--ink-soft); }
+  .step-counter-display .step-dist{ font-size:13px; color:var(--ink); margin-left:6px; }
+  .step-counter-display .step-paused-badge{ font-size:11px; font-weight:700; color:var(--accent-text); background:var(--accent-soft); border:1px solid var(--accent); border-radius:999px; padding:3px 9px; margin-left:6px; }
+  .step-counter-display .step-paused-badge[hidden]{ display:none; }
+  .step-counter-cfg{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+  .step-counter-cfg label{ font-size:12px; font-weight:600; color:var(--ink-soft); }
+  .step-counter-cfg label .zh{ font-size:10.5px; font-weight:500; opacity:.85; margin-left:2px; }
+  .step-counter-cfg input{ width:90px; flex:none; }
+  .step-counter-note{ font-size:11.5px; color:var(--ink-soft); line-height:1.5; }
+  .step-counter-note .zh{ display:block; margin-top:3px; opacity:.85; }
+  .step-counter-note.perm-warn{ color:var(--bad-ink); }
 
   /* ---------- Signatures ---------- */
   .sig-grid{ display:grid; grid-template-columns:repeat(3,1fr); gap:14px; padding:16px; }
@@ -199,6 +228,27 @@
   .modal-body{ padding:16px 18px; overflow-y:auto; display:grid; gap:14px; }
   .modal-foot{ display:flex; gap:8px; justify-content:flex-end; padding:14px 18px; border-top:1px solid var(--border-soft); }
   .modal-note{ font-size:12.5px; color:var(--ink-soft); }
+
+  /* ---------- Medir en la foto ---------- */
+  .measure-refs{ display:flex; flex-direction:column; gap:8px; }
+  .measure-ref-opt{ display:flex; align-items:center; gap:8px; font-size:13px; padding:8px 10px; border:1px solid var(--border-soft); border-radius:8px; background:var(--surface-2); cursor:pointer; }
+  .measure-ref-opt input{ width:auto; flex:none; }
+  .measure-ref-opt .zh{ color:var(--ink-soft); font-size:11px; }
+  .measure-ref-extra{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding:8px 10px; background:var(--surface-2); border:1px solid var(--border-soft); border-radius:8px; }
+  .measure-ref-extra[hidden]{ display:none; }
+  .measure-ref-extra label{ font-size:12px; font-weight:600; color:var(--ink-soft); }
+  .measure-ref-extra input{ width:90px; flex:none; }
+  .measure-instruction{ font-size:12.5px; color:var(--accent-text); background:var(--accent-soft); border:1px solid var(--accent); border-radius:8px; padding:8px 10px; }
+  .measure-instruction .zh{ display:block; color:var(--ink-soft); opacity:.9; margin-top:2px; }
+  .measure-canvas-wrap{ display:flex; justify-content:center; background:var(--surface-2); border:1px solid var(--border-soft); border-radius:8px; padding:8px; touch-action:none; }
+  #measureCanvas{ max-width:100%; border-radius:6px; cursor:crosshair; touch-action:none; }
+  .measure-actions{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; justify-content:space-between; }
+  .measure-result{ font-size:13.5px; font-weight:700; color:var(--good-ink); }
+  .measure-label-row{ display:flex; flex-direction:column; gap:6px; }
+  .measure-label-row label{ font-size:12px; font-weight:600; color:var(--ink-soft); }
+  .measure-row{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .measure-row[hidden]{ display:none; }
+  .measure-result-mini{ font-size:12px; color:var(--accent-text); font-weight:600; }
 
   /* ---------- Action bar ---------- */
   .actionbar{
@@ -263,6 +313,8 @@
   .detail-item .dtext{ flex:1; }
   .detail-item .dobs{ display:block; color:var(--ink-soft); margin-top:2px; }
   .detail-item img{ width:34px; height:34px; object-fit:cover; border-radius:5px; border:1px solid var(--border); flex:none; }
+  .detail-img-wrap{ position:relative; flex:none; display:inline-flex; }
+  .detail-img-wrap .thumb-caption{ font-size:6.5px; padding:1px 0; border-radius:0 0 4px 4px; }
   .sig-strip{ display:flex; gap:14px; padding:12px 14px; flex-wrap:wrap; }
   .sig-strip .sigmini{ text-align:center; }
   .sig-strip img{ width:120px; height:44px; object-fit:contain; background:var(--surface-2); border:1px solid var(--border-soft); border-radius:6px; }
@@ -314,6 +366,26 @@
 
     <div class="section-title"><span>Datos generales</span><span class="zh">基本信息</span><span class="rule"></span></div>
     <div class="card field-grid" id="headerFields"></div>
+
+    <div class="section-title"><span>Contador de pasos (opcional)</span><span class="zh">步数计数器（可选）</span><span class="rule"></span></div>
+    <div class="card step-counter-card" id="stepCounterCard">
+      <div class="step-counter-row">
+        <button class="btn btn-primary btn-sm" id="btnStepStart" type="button">Iniciar ingreso a labor <span style="opacity:.8;font-weight:500">/ 开始进入作业面</span></button>
+        <button class="btn btn-ghost btn-sm" id="btnStepStop" type="button" hidden>Detener conteo <span style="opacity:.8;font-weight:500">/ 停止计数</span></button>
+        <button class="btn btn-primary btn-sm" id="btnStepResume" type="button" hidden>▶ Reanudar conteo <span style="opacity:.8;font-weight:500">/ 继续计数</span></button>
+        <div class="step-counter-display" id="stepCounterDisplay" hidden>
+          <span class="step-num" id="stepCountVal">0</span><span class="step-lbl"> pasos / 步</span>
+          <span class="step-dist" id="stepDistVal"></span>
+          <span class="step-paused-badge" id="stepPausedBadge" hidden>⏸ Pausado / 已暂停</span>
+        </div>
+      </div>
+      <div class="step-counter-cfg">
+        <label for="stepFactorInput">Factor de calibración (m/paso) <span class="zh">校准系数（米/步）</span></label>
+        <input type="number" id="stepFactorInput" min="0.10" max="2" step="0.01" value="0.70">
+      </div>
+      <div class="step-counter-note" id="stepCounterNote">Funciona sin conexión (usa el sensor del teléfono, no internet). Presiona "Iniciar ingreso a labor" al entrar a la labor; al tocar Cámara/Galería para documentar una condición, el conteo se PAUSA automáticamente (para no sumar pasos falsos por el manejo del teléfono al detenerte) y guarda en ese ítem los pasos recorridos hasta ese punto (siempre editable). Toca "Reanudar conteo" cuando retomes la caminata. Si el sensor no está disponible en tu dispositivo, puedes escribir el número de pasos a mano.<span class="zh">离线可用（使用手机传感器，不需要网络）。进入作业面时点击"开始进入作业面"；点击相机/相册记录条件证据时，计数会自动暂停（避免因停下操作手机而多算步数），并把当时的步数记录到该项（可随时编辑）。继续行走时点击"继续计数"。如果设备没有该传感器，也可以手动输入步数。</span></div>
+      <div class="step-counter-note" id="stepCounterPermNote" hidden></div>
+    </div>
 
     <div class="section-title"><span>Grupos de verificación</span><span class="zh">检查项目组</span><span class="rule"></span></div>
     <div id="groupsContainer"></div>
@@ -418,12 +490,50 @@
   </div>
 </div>
 
+<div class="modal-backdrop" id="measureModalBackdrop" hidden>
+  <div class="modal-card">
+    <div class="modal-head">
+      <div>
+        <h3>Medir en la foto</h3>
+        <div class="zh">在照片中测量</div>
+      </div>
+      <button type="button" class="modal-close" id="measureModalClose" aria-label="Cerrar">✕</button>
+    </div>
+    <div class="modal-body" id="measureModalBody">
+      <div class="measure-refs" id="measureRefs"><!-- se construye desde la pestaña Maestro (REFERENCIAS_MEDIDA) --></div>
+      <div class="measure-ref-extra" id="measureMultExtra">
+        <label>¿Cuántas veces se repite esa medida en la línea que marcaste? <span class="zh">该参照测量在标记线上重复几次？</span></label>
+        <input type="number" id="measureMultInput" min="1" step="1" value="1">
+      </div>
+      <div class="measure-ref-extra" id="measureOtroExtra" hidden>
+        <label>Longitud real del objeto (cm) <span class="zh">物体实际长度（厘米）</span></label>
+        <input type="number" id="measureOtroCm" min="0.1" step="0.1" value="30">
+      </div>
+      <div class="measure-instruction" id="measureInstruction"></div>
+      <div class="measure-canvas-wrap"><canvas id="measureCanvas"></canvas></div>
+      <div class="measure-actions">
+        <button type="button" class="btn btn-ghost btn-sm" id="measureUndo">↺ Rehacer puntos <span class="zh">重新标记</span></button>
+        <div class="measure-result" id="measureResult" hidden></div>
+      </div>
+      <div class="measure-label-row" id="measureLabelRow" hidden>
+        <label for="measureLabelInput">¿Qué mediste? (opcional) <span class="zh">测量的是什么？（可选）</span></label>
+        <input type="text" id="measureLabelInput" placeholder="Ej: Ancho de la grieta / Altura del desprendimiento" maxlength="60">
+      </div>
+    </div>
+    <div class="modal-foot">
+      <div class="modal-note" style="margin-right:auto; align-self:center;">Marca primero los 2 extremos de la referencia, luego los 2 de lo que quieres medir.<br>先标记参照物的两端，再标记要测量物体的两端。</div>
+      <button type="button" class="btn btn-ghost btn-sm" id="measureModalCancel">Cancelar</button>
+      <button type="button" class="btn btn-primary btn-sm" id="measureModalSave" disabled>Guardar medida</button>
+    </div>
+  </div>
+</div>
+
 <script>
 window.__QAQC_GRUPOS__ = [{"es": "1. VENTILACIÓN/ SERVICIOS AUXILIARES", "zh": "1. 通风/辅助服务", "items": [{"es": "Tablero de gases (se encuentra actualizado)", "zh": "气体检测板（是否已更新）"}, {"es": "Atmósfera minera [registre los datos de lectura del multidetector: Oxígeno (O2) 19.5%-23.5%; Monóxido (CO) <10 ppm; Dióxido de Carbono (CO2) < 1000 ppm; Dióxido de Nitrógeno (NO2) < 1 ppm ; Dióxido de Carbono (CO2) < 0.5% ;Metáno (CH4) < 1.0% ]", "zh": "矿井空气[记录多功能检测仪读数：氧气(O2) 19.5%-23.5%；一氧化碳(CO) <10 ppm；二氧化碳(CO2) <1000 ppm；二氧化氮(NO2) <1 ppm；二氧化碳(CO2) <0.5%；甲烷(CH4) <1.0%]"}, {"es": "Estado ductos de ventilación (distancia al frente de avance 30m, sin fugas, bien acoplado).", "zh": "风筒布状态（距掘进工作面30米，无泄漏，连接良好）。"}, {"es": "Estado de ventiladores (presenta vibración, ruidos anómalos)", "zh": "风机状态（是否存在振动、异常噪声）"}, {"es": "Sensación térmica (describa si es alta o normal)", "zh": "体感温度（说明温度较高或正常）"}, {"es": "Linea de agua al frente de trabajo a 30m, (tiene antilatigo en la flauta), señalizadas color verde", "zh": "工作面供水管线距工作面30米（软管端部配有防甩装置），以绿色标识"}, {"es": "Linea de aire comprimido al frente de trabajo a 30m (tiene antilatigo en la flauta) Señalizadas en color azul", "zh": "工作面压缩空气管线距工作面30米（软管端部配有防甩装置），以蓝色标识"}]}, {"es": "2.ELECTRICOS", "zh": "2. 电气", "items": [{"es": "Distancia del ultimo nicho hasta la cara libre del panel", "zh": "最后一个配电壁龛至矿房自由面的距离"}, {"es": "Estándar del nicho ( orden y aseo, soporte, condiciones de humedad, tipo de piso \"losa\",iluminación, señalizacion, extintor, cajas electricas)", "zh": "硐室标准（整齐清洁、支护、湿度条件、地面类型“混凝土板”、照明、标识、灭火器、电气箱）"}, {"es": "Extensiones electricas ( Esta prohibido el uso de extensiones electricas reportar)", "zh": "电源延长线（禁止使用电源延长线，如有使用须报告）"}, {"es": "Linea de energía electrica (distancia al frente de avance 30m máximo, sin golpes, añadiduras, sin presencia de agua)", "zh": "电力线（距掘进工作面最大30米，无撞击、接头及积水）"}, {"es": "Ganchos de servicios eléctricos (espaciados cada 3m, instalados de manera adecuada)", "zh": "电气服务挂钩（间距3米，安装正确）"}, {"es": "Señal de radio en la labor y estado del cable ( Leaky feeder)", "zh": "作业区域无线电信号及电缆状态（Leaky Feeder / 漏水喂食器）"}]}, {"es": "3. SOSTENIMIENTO", "zh": "3. 支护", "items": [{"es": "Tipo de soporte: Tipo I, II, III, IV, V", "zh": "支护类型：I、II、III、IV、V型"}, {"es": "Estado del soporte instalado area de perforacion del panel (concreto agrietado, mallas deterioradas y cargadas, áreas sin soporte).", "zh": "矿房钻孔区域已安装支护状态（混凝土开裂、网片损坏或受载、无支护区域）。"}, {"es": "Espesor de la capa de concreto, zonas sin cobertura, concreto fracturado.", "zh": "混凝土层厚度、无覆盖区域、破碎混凝土。"}, {"es": "Estación de desabombe (zona seguridad, señalizada, patrón de barras y estado de estas)", "zh": "撬棍站（安全区域、标识、钢筋布置模式及其状态）"}, {"es": "Estado del soporte instalado 100m lineales antes de la cara libre del panel (concreto agrietado, mallas deterioradas y cargadas, áreas sin soporte)", "zh": "矿房自由面前方100米范围内已安装支护状态（混凝土开裂、网片损坏或受载、无支护区域）"}]}, {"es": "4.PREPARACIÓN DEL FRENTE", "zh": "4. 工作面准备", "items": [{"es": "¿Hay material, rocas sueltas, detritos, etc., producto de la voladura anterior?", "zh": "是否存在上次爆破产生的材料、松散岩石、碎屑等？"}, {"es": "¿El piso se encuentra nivelado?", "zh": "地面是否平整？"}, {"es": "¿Hay empozamiento de agua que comprometan la operatividad del equipo al transitar ?", "zh": "是否存在影响设备通行和运行的积水？"}, {"es": "¿Hay empozamiento de agua en el lugar donde se ubicará el equipo?", "zh": "设备将要停放的位置是否有积水？"}, {"es": "¿Hay barrenos para reperforar?, indique cuantos.", "zh": "是否有需要重新钻孔的炮孔？请注明数量。"}]}, {"es": "5.SEGURIDAD", "zh": "5. 安全", "items": [{"es": "¿El panel cuenta con cadena de señalización en la cara libre?", "zh": "矿房自由面是否设置警示链条？"}, {"es": "¿El ingreso al panel se encuentra nomenclado?", "zh": "矿房入口是否已编号？"}, {"es": "¿Se dispone de manguera HDPE para el encamisado de nuevas líneas?", "zh": "是否有HDPE软管用于新孔线套管？"}, {"es": "¿El panel cuenta con las 6 líneas de seguridad barrenadas y encamisadas? (lineas de colchón)", "zh": "矿房是否已完成6条安全线的钻孔和套管？（缓冲线）"}, {"es": "En caso de no contar con las 6 líneas de seguridad, averiguar si corresponde a labor de condición de actividad no rutinaria.", "zh": "如未完成6条安全线，请确认是否属于非例行活动条件的作业。"}, {"es": "¿Se mantiene el orden y aseo a lo largo de la labor?", "zh": "整个作业区域是否保持整齐和清洁？"}]}, {"es": "6.LINEA DE VIDA STOPE", "zh": "6. 采场生命线", "items": [{"es": "Tipo de perno: Split Set galvanizado de 2,10 m para malla y perno helicoidal de mínimo 2,10 m para concreto lanzado.", "zh": "锚杆类型：网片使用2.10米镀锌锚杆，喷射混凝土使用长度至少2.10米的钢筋锚杆。"}, {"es": "Verificar Línea de vida en buen estado, sin golpes ni deterioro.", "zh": "检查生命线状态良好，无撞击或损坏。"}, {"es": "Verificar Pernos en buen estado, sin deformaciones ni daños.", "zh": "检查锚杆状态良好，无变形或损坏。"}, {"es": "¿La Altura promedio de los pernos instalados esta entre 1,50 m y 1,80 m?", "zh": "已安装锚杆的平均高度是否在1.50米至1.80米之间？"}, {"es": "¿La Separación entre pernos es de máximo 3,00 m en línea horizontal?", "zh": "水平线上锚杆间距是否最大为3.00米？"}, {"es": "¿La Platina con el perno esta separada mínimo 10 centímetros del hastial?", "zh": "锚杆托盘与巷道帮壁之间的距离是否至少为10厘米？"}, {"es": "¿ la Línea de vida esta instalada dentro del área de influencia del panel?", "zh": "生命线是否安装在矿房影响区域内？"}, {"es": "¿ La Línea de vida esta instalada hasta 10 m atrás de la cara libre del panel?", "zh": "生命线是否安装至矿房自由面后方10米处？"}, {"es": "Verificar nudo ballestrinque en cada perno.", "zh": "检查每根锚杆上的双套结是否正确。"}, {"es": "Verificar que no haya catenarias pronunciadas entre pernos.", "zh": "检查锚杆之间是否存在明显的悬垂弧度。"}, {"es": "Verificar que se encuentre correctamente realizado el ponchado de la linea de vida", "zh": "检查生命线压接是否正确完成"}, {"es": "La línea de vida está aprobada y cuenta con el precinto de seguridad en el cabo del extremo.", "zh": "生命线已获批准，端部绳头配有安全封条。"}], "nota": {"es": "Aplica solo si la Categoría de explotación es STOPE.", "zh": "仅当开采类别为STOPE（下向孔矿房）时适用。"}}, {"es": "8.CABLE BOLT", "zh": "8. Cable Bolt", "items": [{"es": "Todos los Cable Bolts se encuentran marcados de acuerdo al plan (aerosol azul, número de puntos marcados).", "zh": "所有Cable Bolt均按照计划进行标记（蓝色喷漆及标记点数量）。"}, {"es": "¿Es necesario remarcar? (¿Hasta qué línea se encuentran marcados?)", "zh": "是否需要重新标记？（已标记到哪一排？）"}]}, {"es": "9. FASE CABLE BOLT", "zh": "9. Cable Bolt阶段", "items": [{"es": "Perforación: ¿Cuántos barrenos Cable Bolts se encuentran perforados y hasta qué línea y de que longitud (6m / 10m)?", "zh": "钻孔：已钻孔的锚索孔有多少个？钻到哪一排？长度是多少（6米/10米）？"}, {"es": "¿Cuanto cables del total se encuentran calafateados?, indicar tiempo de fraguado.", "zh": "所有锚索中有多少根已封堵？请注明胶结时间。"}, {"es": "Inyección: ¿Cuántos Cable Bolts se encuentran inyectados y hasta qué línea están inyectados?", "zh": "注浆：已注浆的锚索有多少根？注浆到哪一排？"}, {"es": "Inyección: ¿Se observa retorno en la manguera?", "zh": "注浆：软管中是否观察到回流？"}, {"es": "Inyección: ¿Cuánto tiempo lleva de fraguado?", "zh": "注浆：已胶结多长时间？"}, {"es": "Tensión: ¿Cuántos Cable Bolts se encuentran tensionados y hasta qué línea están tensionados?", "zh": "张拉：已有多少根锚索完成拉紧？拉紧到哪一排？"}, {"es": "Tensión: ¿A cuántos bares fueron tensionados? ¿Tienen el Barril y la planchuela?", "zh": "拉紧：拉紧压力是多少bar？是否配有桶形组件（Barril）和钢板（planchuela）？"}, {"es": "¿A que distancia de la cara libre se encuentra los Cable Bolts?", "zh": "锚索距离自由面多远？"}]}, {"es": "10. MARCACIÓN", "zh": "10. 标记", "items": [{"es": "Línea de inicio y fin del panel. (¿Se encuentran marcadas? ¿Es necesario remarcar?)", "zh": "矿房起始线和终止线。（是否已标记？是否需要重新标记？）"}, {"es": "Líneas de SLOT marcadas S1–S6. (¿Se encuentran marcadas?)", "zh": "拉槽孔S1–S6已标记。（是否已标记？）"}, {"es": "Se encuentran marcadas las líneas de PRODUCCIÓN R1–R?. ¿Indique hasta qué línea de producción está la marcación?", "zh": "生产线R1–R?是否已标记？请注明标记到哪一条生产线。"}, {"es": "Puntos de ruptura. (¿Se encuentran marcados? ¿Es necesario remarcar?)", "zh": "断裂点。（是否已标记？是否需要重新标记？）"}, {"es": "¿Hay suficientes líneas marcadas? (Mínimo 6 líneas de ventaja).", "zh": "标记线是否足够？（至少6条超前线）。"}]}, {"es": "11.PERFORACIÓN", "zh": "11. 钻孔", "items": [{"es": "¿Con qué equipo se está perforando? (Sandvik 210, Sandvik 2710, Epiroc Simba, Huatai).", "zh": "使用什么设备进行钻孔？（山特维克210、山特维克2710、安百拓、华泰）。"}, {"es": "¿El equipo cuenta con inclinómetro operativo y calibrado? Si no cumple, indicar con qué se está realizando la medición.", "zh": "设备是否配有正常运行且已校准的倾角仪？如不符合，请注明使用何种方式进行测量。"}, {"es": "¿Cuánto desfase hay entre el eje de alineación y el punto de penetración de la broca? Tomar medida.", "zh": "对齐轴线与钻头进入点之间的偏差是多少？请测量。"}, {"es": "¿En qué línea se encuentra la perforación?", "zh": "钻孔目前进行到哪一排？"}, {"es": "¿Los barrenos de las líneas de seguridad están encamisados? En caso de no cumplir, indicar cuántos no están encamisados.", "zh": "安全线炮孔是否已套管？如不符合，请注明未套管的数量。"}, {"es": "¿El emboquille cumple con el diseño? En caso de no cumplir, indicar si se debe a la mesa del equipo, a la condición del terreno u otro motivo indicado por el operador.", "zh": "孔口位置是否符合设计？如不符合，请注明是由于设备钻台、地质条件或操作员说明的其他原因。"}, {"es": "¿Los barrenos de las líneas de producción están encamisados? En caso de no cumplir, indicar cuántos no están encamisados.", "zh": "生产线炮孔是否已套管？如不符合，请注明未套管的数量。"}, {"es": "¿Se esta cumpliendo con el patron indicado en el plan? En caso de no cumplir indicar la razón.", "zh": "是否按照计划规定的布置模式执行？如不符合，请说明原因。"}]}, {"es": "12.VOLADURA (Solo si estan en cargue )", "zh": "12. 爆破（仅在装药时）", "items": [{"es": "Indicar en qué línea va la perforación y en qué línea va la voladura.", "zh": "注明钻孔进行到哪一排，以及爆破进行到哪一排。"}, {"es": "Indicar cuántas líneas y el número de barrenos que saldrán con la siguiente voladura.", "zh": "注明下一次爆破将起爆多少排以及炮孔数量。"}, {"es": "¿Se está cargando de acuerdo con el estándar: 1 m = 2,4 kg de Anfo?", "zh": "是否按照标准装药：1米=2.4公斤ANFO？"}], "nota": {"es": "Aplica solo durante actividad de carguío de explosivos.", "zh": "仅在装药作业期间适用。"}}];
-window.__QAQC_MASTER_DEFAULT__ = {"PANELES": ["VS_9999_PanelEjemplo_W_ST_1", "VS_9999_PanelEjemplo_W_UP_1", "YR_9999_PanelEjemplo_W_ST_2"], "TIPO_PANEL": ["STOPE", "UPPER"], "TURNOS": ["Día / 白班", "Noche / 夜班"], "GUARDIAS": ["A", "B", "C"], "INSPECTORES": ["Inspector Ejemplo 1", "Inspector Ejemplo 2"], "SUPERVISORES": ["Supervisor Ejemplo 1", "Supervisor Ejemplo 2"], "EMPRESAS": ["Operación Mina", "Contratista"], "OPERADORES_EQUIPO": ["Operador Ejemplo 1 — Especialista en Barrenación", "Operador Ejemplo 2 — Operador de equipos de perforación I"], "CODIGOS_EQUIPO": ["Equipo Ejemplo DL210 — DL-EJ01", "Equipo Ejemplo Simba — SB-EJ01"], "FASES": ["Producción / 生产", "Preparación / 准备"], "ACTIVIDADES": ["Topografía y diseño del panel", "Levantamiento y definición geométrica del stope", "Instalación de servicios auxiliares", "Ventilación", "Energía eléctrica", "Línea de agua", "Línea de aire comprimido", "Señal de comunicación", "Marcación topográfica", "Líneas de slot", "Líneas de producción", "Ejes de alineación", "Puntos de ruptura del panel", "Perforación y apertura del slot", "Perforación de la chimenea (slot)", "Perforación de producción (taladros largos)", "Perforación vertical / subvertical", "Perforación con Simba", "Perforación con Sandvik", "Perforación con Huatai", "Instalación de cable Bolt", "Perforación barreno para cable", "Instalación de cable", "Calafateo", "Inyección", "Tensionado de cable", "Cargue de explosivo", "Voladura primaria", "Detonación del slot", "Voladura secundaria", "Detonación de líneas", "Ventilación post-voladura", "Control de pasivos / saneamiento", "Desquinche", "Control de material suelto", "Extracción de material", "Transporte hacia superficie", "Control de dilución", "Seguimiento de material extraído", "Relleno del stope (backfill)", "Relleno hidráulico (backfill)", "Relleno detrítico (rock fill)", "Mezcla de relleno (cemented rock fill)"]};
+window.__QAQC_MASTER_DEFAULT__ = {"PANELES": ["VS_9999_PanelEjemplo_W_ST_1", "VS_9999_PanelEjemplo_W_UP_1", "YR_9999_PanelEjemplo_W_ST_2"], "TIPO_PANEL": ["STOPE", "UPPER"], "TURNOS": ["Día / 白班", "Noche / 夜班"], "GUARDIAS": ["A", "B", "C"], "INSPECTORES": ["Inspector Ejemplo 1", "Inspector Ejemplo 2"], "SUPERVISORES": ["Supervisor Ejemplo 1", "Supervisor Ejemplo 2"], "EMPRESAS": ["Operación Mina", "Contratista"], "OPERADORES_EQUIPO": ["Operador Ejemplo 1 — Especialista en Barrenación", "Operador Ejemplo 2 — Operador de equipos de perforación I"], "CODIGOS_EQUIPO": ["Equipo Ejemplo DL210 — DL-EJ01", "Equipo Ejemplo Simba — SB-EJ01"], "FASES": ["Producción / 生产", "Preparación / 准备"], "ACTIVIDADES": ["Topografía y diseño del panel", "Levantamiento y definición geométrica del stope", "Instalación de servicios auxiliares", "Ventilación", "Energía eléctrica", "Línea de agua", "Línea de aire comprimido", "Señal de comunicación", "Marcación topográfica", "Líneas de slot", "Líneas de producción", "Ejes de alineación", "Puntos de ruptura del panel", "Perforación y apertura del slot", "Perforación de la chimenea (slot)", "Perforación de producción (taladros largos)", "Perforación vertical / subvertical", "Perforación con Simba", "Perforación con Sandvik", "Perforación con Huatai", "Instalación de cable Bolt", "Perforación barreno para cable", "Instalación de cable", "Calafateo", "Inyección", "Tensionado de cable", "Cargue de explosivo", "Voladura primaria", "Detonación del slot", "Voladura secundaria", "Detonación de líneas", "Ventilación post-voladura", "Control de pasivos / saneamiento", "Desquinche", "Control de material suelto", "Extracción de material", "Transporte hacia superficie", "Control de dilución", "Seguimiento de material extraído", "Relleno del stope (backfill)", "Relleno hidráulico (backfill)", "Relleno detrítico (rock fill)", "Mezcla de relleno (cemented rock fill)"], "REFERENCIAS_MEDIDA": ["Ducto de ventilación = 90", "Malla (1 cuadro) = 10"]};
 window.__QAQC_HEADER_FIELDS__ = [{"key": "fecha", "es": "Fecha", "zh": "日期", "type": "date"}, {"key": "inspector", "es": "Inspector", "zh": "检查员", "type": "select", "list": "INSPECTORES"}, {"key": "empresa", "es": "Empresa", "zh": "公司", "type": "select", "list": "EMPRESAS"}, {"key": "supervisor", "es": "Supervisor", "zh": "主管", "type": "select", "list": "SUPERVISORES"}, {"key": "turno", "es": "Turno", "zh": "班次", "type": "select", "list": "TURNOS"}, {"key": "labor", "es": "Labor (panel)", "zh": "作业（面板）", "type": "select", "list": "PANELES"}, {"key": "operadorEquipo", "es": "Operador de equipo", "zh": "设备操作员", "type": "select", "list": "OPERADORES_EQUIPO"}, {"key": "guardia", "es": "Guardia", "zh": "班组", "type": "select", "list": "GUARDIAS"}, {"key": "fase", "es": "Fase", "zh": "阶段", "type": "select", "list": "FASES"}, {"key": "codigoEquipo", "es": "Código equipo", "zh": "设备代码", "type": "select", "list": "CODIGOS_EQUIPO"}, {"key": "categoriaExplotacion", "es": "Categoría explotación", "zh": "开采类别", "type": "select", "list": "TIPO_PANEL"}, {"key": "actividad", "es": "Actividad", "zh": "活动", "type": "text_list", "list": "ACTIVIDADES", "placeholder": "Perforación de producción"}];
 window.__QAQC_SIGNERS__ = [{"key": "inspector", "es": "Firma Inspector", "zh": "检查员签名", "nameField": "inspector"}, {"key": "supervisor", "es": "Firma Supervisor", "zh": "主管签名", "nameField": "supervisor"}, {"key": "operador", "es": "Firma Operador de Equipo", "zh": "设备操作员签名", "nameField": "operadorEquipo"}];
-window.__QAQC_MAESTRO_COLUMNS__ = [{"key": "PANELES", "es": "Paneles / Labores", "zh": "面板/作业", "aliases": ["PANELES", "PANEL", "LABOR", "LABORES", "NAME", "NOMBRE"]}, {"key": "TIPO_PANEL", "es": "Tipo de panel", "zh": "面板类型", "aliases": ["TIPO_PANEL", "TIPO DE PANEL", "TIPO PANEL", "CATEGORIA EXPLOTACION", "CATEGORIA_EXPLOTACION"]}, {"key": "TURNOS", "es": "Turnos", "zh": "班次", "aliases": ["TURNOS", "TURNO", "SHIFT"]}, {"key": "GUARDIAS", "es": "Guardias", "zh": "班组", "aliases": ["GUARDIAS", "GUARDIA", "GUARD"]}, {"key": "INSPECTORES", "es": "Inspectores", "zh": "检查员", "aliases": ["INSPECTORES", "INSPECTOR"]}, {"key": "SUPERVISORES", "es": "Supervisores", "zh": "主管", "aliases": ["SUPERVISORES", "SUPERVISOR", "LIDERES_TURNO", "LIDER DE TURNO", "LIDER"]}, {"key": "EMPRESAS", "es": "Empresas / Contratistas", "zh": "公司/承包商", "aliases": ["EMPRESAS", "EMPRESA", "CONTRATISTA", "CONTRATISTAS", "CONTRACTOR"]}, {"key": "OPERADORES_EQUIPO", "es": "Operadores de equipo", "zh": "设备操作员", "aliases": ["OPERADORES_EQUIPO", "OPERADOR DE EQUIPO", "OPERADOR_EQUIPO", "OPERATOR NAME", "OPERATOR"]}, {"key": "CODIGOS_EQUIPO", "es": "Códigos de equipo", "zh": "设备代码", "aliases": ["CODIGOS_EQUIPO", "CODIGO EQUIPO", "CODIGO_EQUIPO", "MACHINE NAME", "CODIGO"]}, {"key": "FASES", "es": "Fases", "zh": "阶段", "aliases": ["FASES", "FASE", "CATEGORY", "CATEGORIA"]}, {"key": "ACTIVIDADES", "es": "Actividades", "zh": "活动", "aliases": ["ACTIVIDADES", "ACTIVIDAD", "ACTIVITY"]}];
+window.__QAQC_MAESTRO_COLUMNS__ = [{"key": "PANELES", "es": "Paneles / Labores", "zh": "面板/作业", "aliases": ["PANELES", "PANEL", "LABOR", "LABORES", "NAME", "NOMBRE"]}, {"key": "TIPO_PANEL", "es": "Tipo de panel", "zh": "面板类型", "aliases": ["TIPO_PANEL", "TIPO DE PANEL", "TIPO PANEL", "CATEGORIA EXPLOTACION", "CATEGORIA_EXPLOTACION"]}, {"key": "TURNOS", "es": "Turnos", "zh": "班次", "aliases": ["TURNOS", "TURNO", "SHIFT"]}, {"key": "GUARDIAS", "es": "Guardias", "zh": "班组", "aliases": ["GUARDIAS", "GUARDIA", "GUARD"]}, {"key": "INSPECTORES", "es": "Inspectores", "zh": "检查员", "aliases": ["INSPECTORES", "INSPECTOR"]}, {"key": "SUPERVISORES", "es": "Supervisores", "zh": "主管", "aliases": ["SUPERVISORES", "SUPERVISOR", "LIDERES_TURNO", "LIDER DE TURNO", "LIDER"]}, {"key": "EMPRESAS", "es": "Empresas / Contratistas", "zh": "公司/承包商", "aliases": ["EMPRESAS", "EMPRESA", "CONTRATISTA", "CONTRATISTAS", "CONTRACTOR"]}, {"key": "OPERADORES_EQUIPO", "es": "Operadores de equipo", "zh": "设备操作员", "aliases": ["OPERADORES_EQUIPO", "OPERADOR DE EQUIPO", "OPERADOR_EQUIPO", "OPERATOR NAME", "OPERATOR"]}, {"key": "CODIGOS_EQUIPO", "es": "Códigos de equipo", "zh": "设备代码", "aliases": ["CODIGOS_EQUIPO", "CODIGO EQUIPO", "CODIGO_EQUIPO", "MACHINE NAME", "CODIGO"]}, {"key": "FASES", "es": "Fases", "zh": "阶段", "aliases": ["FASES", "FASE", "CATEGORY", "CATEGORIA"]}, {"key": "ACTIVIDADES", "es": "Actividades", "zh": "活动", "aliases": ["ACTIVIDADES", "ACTIVIDAD", "ACTIVITY"]}, {"key": "REFERENCIAS_MEDIDA", "es": "Referencias de medida (para la herramienta de medir en foto)", "zh": "测量参照物列表（用于照片测量工具）", "aliases": ["REFERENCIAS_MEDIDA", "REFERENCIAS DE MEDIDA", "MEDIDAS_REFERENCIA", "REFERENCIAS"]}];
 window.__QAQC_PANEL_TIPO_DEFAULT__ = {"VS_9999_PanelEjemplo_W_ST_1": "STOPE", "VS_9999_PanelEjemplo_W_UP_1": "UPPER", "YR_9999_PanelEjemplo_W_ST_2": "STOPE"};
 window.__QAQC_PANEL_FASE_DEFAULT__ = {"VS_9999_PanelEjemplo_W_ST_1": "Preparación / 准备", "VS_9999_PanelEjemplo_W_UP_1": "Producción / 生产", "YR_9999_PanelEjemplo_W_ST_2": "Producción / 生产"};
 </script>

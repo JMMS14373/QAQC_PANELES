@@ -129,6 +129,19 @@
   }
   let PANEL_DERIVE = loadPanelDerive();
 
+  // Filtro de Actividad por Fase (Preparación/Producción), cuando el maestro cargado trae
+  // esas dos listas separadas (ver importMaestroFile -> tryParseRealMaestro). Si no hay datos
+  // (maestro de ejemplo, formato anterior de una sola lista, o formato plantilla), queda null
+  // y el campo Actividad muestra la lista combinada completa, como siempre.
+  function loadActividadFase(){
+    try {
+      const saved = JSON.parse(localStorage.getItem("qaqc_maestro_actividad_fase") || "null");
+      if (saved) return saved;
+    } catch(e){}
+    return null;
+  }
+  let ACTIVIDAD_FASE = loadActividadFase();
+
   function updateMaestroBadges(){
     const meta = getMaestroMeta();
     const pillEl = document.getElementById("maestroPillText");
@@ -189,6 +202,26 @@
     headerState.id = genId();
     document.getElementById("idRegistroVal").textContent = headerState.id;
 
+    // Actividad filtrada por Fase: si el maestro cargado trae las listas de Preparación y
+    // Producción separadas (ver tryParseRealMaestro -> actividadPorFase), el campo Actividad
+    // (datalist) solo sugiere las de la Fase actualmente elegida. Sin esos datos (maestro de
+    // ejemplo, o un maestro con el formato anterior de una sola lista), sigue mostrando todas.
+    function refreshActividadOptions(){
+      const dl = document.getElementById("dl_actividad");
+      if (!dl) return;
+      const faseVal = headerState.fase;
+      const lista = (ACTIVIDAD_FASE && ACTIVIDAD_FASE[faseVal] && ACTIVIDAD_FASE[faseVal].length)
+        ? ACTIVIDAD_FASE[faseVal]
+        : (MASTER.ACTIVIDADES || []);
+      dl.innerHTML = lista.map(v => `<option value="${esc(v)}">`).join("");
+    }
+    refreshActividadOptions();
+
+    const faseEl = wrap.querySelector('[data-key="fase"]');
+    if (faseEl){
+      faseEl.addEventListener("change", () => { headerState.fase = faseEl.value; refreshActividadOptions(); });
+    }
+
     // Al elegir la Labor/Panel, autocompletar Categoría de explotación y Fase si el maestro
     // trae esa relación (deriva de la columna Name / Category del Maestro_Paneles real).
     const laborEl = wrap.querySelector('[data-key="labor"]');
@@ -203,16 +236,183 @@
         }
         if (fase){
           const el = wrap.querySelector('[data-key="fase"]');
-          if (el && [...el.options].some(o => o.value === fase)){ el.value = fase; headerState.fase = fase; }
+          if (el && [...el.options].some(o => o.value === fase)){ el.value = fase; headerState.fase = fase; refreshActividadOptions(); }
         }
       });
     }
   }
 
   /* ============================================================
+     Contador de pasos (podómetro) — para estimar la distancia entre el
+     ingreso a la labor y una condición subestándar reportada.
+     100% offline: usa el sensor de movimiento del propio teléfono
+     (DeviceMotionEvent), sin librerías externas ni conexión a internet.
+     No existe un "conteo de pasos" nativo del sistema operativo expuesto
+     a una página web -- se detectan los pasos a partir de picos en la
+     magnitud de la aceleración (acelerómetro), con un filtro simple y un
+     tiempo mínimo entre pasos para no contar de más. Por eso el número
+     siempre queda editable a mano por ítem: es una ayuda, no un valor
+     exacto, y el inspector puede corregirlo con su propio criterio
+     (igual que hacía antes contando mentalmente).
+     ============================================================ */
+  let stepCounterActive = false;   // true entre "Iniciar" y "Detener"
+  let stepListening = false;         // true mientras devicemotion está realmente escuchando (false = pausado)
+  let stepSetupOK = false;           // true si el sensor quedó correctamente inicializado (permiso ok, soportado)
+  let stepCount = 0;                 // pasos acumulados desde "Iniciar ingreso a labor"
+  let stepSensorOK = false;          // true si devicemotion realmente está entregando datos
+  let stepBaseline = null;           // línea base de la aceleración "en reposo" (gravedad), se adapta lento
+  let stepInPeak = false;            // true mientras seguimos "dentro" del mismo pico (evita contar 2 veces)
+  let stepLastTs = 0;                // timestamp del último paso contado (para el "debounce")
+  const STEP_MIN_INTERVAL_MS = 300;  // ~<=3.3 pasos/seg, evita contar el mismo paso 2 veces
+  const STEP_PEAK_THRESHOLD = 1.15;  // aceleración por encima de la línea base que cuenta como paso
+  const STEP_BASELINE_ALPHA = 0.08;  // qué tan rápido se adapta la línea base (bajo = más lento/estable)
+
+  function getCalibrationFactor(){
+    const el = document.getElementById("stepFactorInput");
+    const v = el ? parseFloat(el.value) : NaN;
+    return (!isNaN(v) && v > 0) ? v : 0.7;
+  }
+
+  function fmtDist(steps){
+    const factor = getCalibrationFactor();
+    return (steps * factor).toFixed(1);
+  }
+
+  function updateStepCounterUI(){
+    const display = document.getElementById("stepCounterDisplay");
+    const val = document.getElementById("stepCountVal");
+    const dist = document.getElementById("stepDistVal");
+    const pausedBadge = document.getElementById("stepPausedBadge");
+    const resumeBtn = document.getElementById("btnStepResume");
+    if (!display) return;
+    display.hidden = !stepCounterActive && stepCount === 0;
+    val.textContent = String(stepCount);
+    dist.textContent = "≈ " + fmtDist(stepCount) + " m";
+    document.getElementById("btnStepStart").hidden = stepCounterActive;
+    document.getElementById("btnStepStop").hidden = !stepCounterActive;
+    // "Reanudar" solo tiene sentido si el sensor quedó bien inicializado
+    // (si nunca funcionó -- sin soporte o permiso denegado -- no hay nada que reanudar).
+    const paused = stepCounterActive && stepSetupOK && !stepListening;
+    resumeBtn.hidden = !paused;
+    pausedBadge.hidden = !paused;
+  }
+
+  // Detección de pasos a partir del acelerómetro: magnitud del vector de
+  // aceleración (incluyendo gravedad, disponible en más dispositivos que
+  // la aceleración "pura"). Se compara contra una línea base que se adapta
+  // lentamente (para seguir la gravedad/postura, no el propio pico), con
+  // histéresis: un paso cuenta cuando la señal sube claramente por encima
+  // de la línea base (flanco de subida) y no se vuelve a contar hasta que
+  // la señal baja de nuevo cerca de la línea base -- así una sola zancada
+  // no se cuenta varias veces aunque lleguen muchas muestras del sensor
+  // mientras dura el pico. Además hay un tiempo mínimo entre pasos.
+  function handleDeviceMotion(ev){
+    const a = ev.accelerationIncludingGravity || ev.acceleration;
+    if (!a || a.x == null) return;
+    stepSensorOK = true;
+    const mag = Math.sqrt((a.x||0)**2 + (a.y||0)**2 + (a.z||0)**2);
+    if (stepBaseline == null) stepBaseline = mag;
+    const now = Date.now();
+    if (!stepInPeak){
+      stepBaseline = stepBaseline*(1-STEP_BASELINE_ALPHA) + mag*STEP_BASELINE_ALPHA;
+      if (mag - stepBaseline > STEP_PEAK_THRESHOLD && (now - stepLastTs) > STEP_MIN_INTERVAL_MS){
+        stepInPeak = true;
+        stepLastTs = now;
+        stepCount++;
+        updateStepCounterUI();
+      }
+    } else if (mag - stepBaseline < STEP_PEAK_THRESHOLD*0.4){
+      stepInPeak = false;
+    }
+  }
+
+  async function startStepCounter(){
+    stepCount = 0; stepBaseline = null; stepInPeak = false; stepLastTs = 0; stepSensorOK = false;
+    stepCounterActive = true; stepListening = false; stepSetupOK = false;
+    updateStepCounterUI();
+    const noteEl = document.getElementById("stepCounterPermNote");
+    noteEl.hidden = true; noteEl.classList.remove("perm-warn");
+
+    if (typeof DeviceMotionEvent === "undefined"){
+      noteEl.hidden = false; noteEl.classList.add("perm-warn");
+      noteEl.innerHTML = "Este dispositivo/navegador no expone el sensor de movimiento -- el conteo automático no está disponible. Puedes escribir los pasos a mano en cada ítem.<span class=\"zh\">此设备/浏览器不提供运动传感器 -- 无法自动计数。可以在每项中手动输入步数。</span>";
+      updateStepCounterUI();
+      return;
+    }
+    // iOS 13+ exige pedir permiso explícito, y solo funciona si se llama
+    // directamente desde un toque del usuario (por eso va aquí, dentro
+    // del propio click de "Iniciar ingreso a labor").
+    if (typeof DeviceMotionEvent.requestPermission === "function"){
+      try{
+        const res = await DeviceMotionEvent.requestPermission();
+        if (res !== "granted"){
+          noteEl.hidden = false; noteEl.classList.add("perm-warn");
+          noteEl.innerHTML = "Permiso de sensor de movimiento denegado -- el conteo automático no funcionará. Puedes escribir los pasos a mano en cada ítem, o habilitar el permiso en Ajustes del teléfono y volver a intentar.<span class=\"zh\">运动传感器权限被拒绝 -- 无法自动计数。可以在每项中手动输入步数，或在手机设置中开启权限后重试。</span>";
+          updateStepCounterUI();
+          return;
+        }
+      } catch(e){
+        noteEl.hidden = false; noteEl.classList.add("perm-warn");
+        noteEl.innerHTML = "No se pudo solicitar el permiso del sensor -- el conteo automático no está disponible. Puedes escribir los pasos a mano en cada ítem.<span class=\"zh\">无法请求传感器权限 -- 无法自动计数。可以在每项中手动输入步数。</span>";
+        updateStepCounterUI();
+        return;
+      }
+    }
+    stepSetupOK = true;
+    window.addEventListener("devicemotion", handleDeviceMotion);
+    stepListening = true;
+    updateStepCounterUI();
+    toast("Conteo de pasos iniciado / 步数计数已开始");
+  }
+
+  function stopStepCounter(){
+    stepCounterActive = false; stepListening = false;
+    window.removeEventListener("devicemotion", handleDeviceMotion);
+    updateStepCounterUI();
+    toast("Conteo de pasos detenido (" + stepCount + " pasos) / 步数计数已停止");
+  }
+
+  // Pausa automática: se llama justo al tocar Cámara/Galería (antes de abrir la
+  // foto), para que el manejo del teléfono al detenerse a documentar un hallazgo
+  // NO sume pasos falsos. El conteo NO se reanuda solo -- requiere que el
+  // inspector toque "Reanudar conteo" cuando retome la caminata, para que la
+  // distancia guardada en cada ítem sea confiable.
+  function pauseStepCounter(){
+    if (!stepCounterActive || !stepListening) return;
+    stepListening = false;
+    window.removeEventListener("devicemotion", handleDeviceMotion);
+    updateStepCounterUI();
+  }
+
+  function resumeStepCounter(){
+    if (!stepCounterActive || stepListening || !stepSetupOK) return;
+    // se reinicia la línea base al reanudar -- la orientación/posición del
+    // teléfono pudo cambiar mientras se manejaba para tomar la foto.
+    stepBaseline = null; stepInPeak = false;
+    window.addEventListener("devicemotion", handleDeviceMotion);
+    stepListening = true;
+    updateStepCounterUI();
+    toast("Conteo de pasos reanudado / 步数计数已继续");
+  }
+
+  function initStepCounter(){
+    const savedFactor = localStorage.getItem("qaqc_step_factor");
+    if (savedFactor) document.getElementById("stepFactorInput").value = savedFactor;
+    document.getElementById("stepFactorInput").addEventListener("input", (e) => {
+      localStorage.setItem("qaqc_step_factor", e.target.value);
+      updateStepCounterUI();
+      document.querySelectorAll('.item-row').forEach(row => row.dispatchEvent(new CustomEvent("qaqc:refreshdist")));
+    });
+    document.getElementById("btnStepStart").addEventListener("click", startStepCounter);
+    document.getElementById("btnStepStop").addEventListener("click", stopStepCounter);
+    document.getElementById("btnStepResume").addEventListener("click", resumeStepCounter);
+    updateStepCounterUI();
+  }
+
+  /* ============================================================
      Render: grupos e ítems
      ============================================================ */
-  const itemState = []; // {uid, grupoEs, grupoZh, gi, idx, es, zh, status, obs, photo}
+  const itemState = []; // {uid, grupoEs, grupoZh, gi, idx, es, zh, status, obs, photo, steps, stepsManual}
   function buildGroups(){
     itemState.length = 0;
     const wrap = document.getElementById("groupsContainer");
@@ -228,7 +428,7 @@
       }
       g.items.forEach((it, ii) => {
         const uid = gi + "_" + ii;
-        itemState.push({uid, grupoEs:g.es, grupoZh:g.zh, gi, idx:ii+1, es:it.es, zh:it.zh, status:"", obs:"", photo:""});
+        itemState.push({uid, grupoEs:g.es, grupoZh:g.zh, gi, idx:ii+1, es:it.es, zh:it.zh, status:"", obs:"", photo:"", steps:0, stepsManual:false, measureCm:null, measureLabel:""});
         html += `
         <div class="item-row" data-uid="${uid}">
           <div class="item-num">${ii+1}</div>
@@ -245,6 +445,15 @@
               <button type="button" class="ev-btn" data-role="gallerybtn"><svg><use href="#ic-gallery"/></svg>Galería / 相册</button>
               <input type="file" accept="image/*" capture="environment" hidden data-role="camerainput">
               <input type="file" accept="image/*" hidden data-role="galleryinput">
+            </div>
+            <div class="dist-row" data-role="distrow" hidden>
+              <label>📍 Pasos desde el ingreso <span class="zh">距入口步数</span></label>
+              <input type="number" min="0" step="1" inputmode="numeric" placeholder="0" data-role="stepsinput">
+              <span class="dist-m" data-role="distm"></span>
+            </div>
+            <div class="measure-row" data-role="measurerow" hidden>
+              <button type="button" class="ev-btn" data-role="measurebtn">📏 Medir en la foto <span class="zh">在照片中测量</span></button>
+              <span class="measure-result-mini" data-role="measureresultmini"></span>
             </div>
           </div>
         </div>`;
@@ -275,16 +484,57 @@
 
       row.querySelector('[data-role="obs"]').addEventListener("input", e => { state.obs = e.target.value; });
 
+      // Distancia (contador de pasos): el input queda oculto hasta que el
+      // ítem tenga evidencia fotográfica adjunta (para no llenar de ruido
+      // los ítems "Cumple"), pero el estado se puede seguir corrigiendo a
+      // mano en cualquier momento -- incluso si nunca se usó el sensor.
+      const distRow = row.querySelector('[data-role="distrow"]');
+      const stepsInput = row.querySelector('[data-role="stepsinput"]');
+      const distM = row.querySelector('[data-role="distm"]');
+      function refreshDistDisplay(){
+        distM.textContent = state.steps ? "≈ " + fmtDist(state.steps) + " m" : "";
+        updateThumbCaption(row, state);
+      }
+      stepsInput.addEventListener("input", () => {
+        state.steps = parseInt(stepsInput.value, 10) || 0;
+        state.stepsManual = true;
+        refreshDistDisplay();
+      });
+      row.addEventListener("qaqc:refreshdist", refreshDistDisplay);
+
+      // Medición sobre la foto (regla de referencia: ducto/malla/otro).
+      const measureRow = row.querySelector('[data-role="measurerow"]');
+      row.querySelector('[data-role="measurebtn"]').addEventListener("click", () => {
+        pauseStepCounter();
+        openMeasureModal(row, state);
+      });
+
       const camIn = row.querySelector('[data-role="camerainput"]');
       const galIn = row.querySelector('[data-role="galleryinput"]');
-      row.querySelector('[data-role="camerabtn"]').addEventListener("click", () => camIn.click());
-      row.querySelector('[data-role="gallerybtn"]').addEventListener("click", () => galIn.click());
+      // Pausar el conteo de pasos justo al TOCAR el botón (antes de que se abra
+      // la cámara/galería) -- así todo el manejo del teléfono para documentar
+      // el hallazgo (encuadrar, tomar la foto, esperar a que cargue) queda
+      // fuera del conteo, y no se suman pasos falsos por estar detenido.
+      row.querySelector('[data-role="camerabtn"]').addEventListener("click", () => { pauseStepCounter(); camIn.click(); });
+      row.querySelector('[data-role="gallerybtn"]').addEventListener("click", () => { pauseStepCounter(); galIn.click(); });
       [camIn, galIn].forEach(inp => inp.addEventListener("change", async () => {
         if (!inp.files || !inp.files[0]) return;
         try {
           const dataUrl = await compressImage(inp.files[0], 900, 0.62);
           state.photo = dataUrl;
           renderThumb(row, state);
+          // Al tomar/adjuntar la evidencia -- el momento en que el inspector
+          // "para" en la condición -- se guarda automáticamente el conteo de
+          // pasos acumulado hasta ahora, si el contador está corriendo y el
+          // inspector aún no corrigió el valor a mano.
+          if (!state.stepsManual && (stepCounterActive || stepCount > 0)){
+            state.steps = stepCount;
+            stepsInput.value = state.steps || "";
+          }
+          distRow.hidden = false;
+          refreshDistDisplay();
+          measureRow.hidden = false;
+          updateMeasureRowUI(row, state);
           toast("Evidencia adjuntada / 已附加证据");
         } catch(e){ toast("No se pudo procesar la imagen"); }
         inp.value = "";
@@ -305,6 +555,237 @@
       });
     }
     thumb.querySelector("img").src = state.photo;
+    updateThumbCaption(row, state);
+  }
+
+  // Pie de foto: muestra la distancia estimada superpuesta sobre la propia
+  // miniatura de la evidencia (no solo en el campito aparte), para que quede
+  // inseparable de la foto a simple vista -- sin tocar el texto libre de
+  // "Observaciones".
+  function updateThumbCaption(row, state){
+    const thumb = row.querySelector(".thumb-wrap");
+    if (!thumb) return;
+    let cap = thumb.querySelector(".thumb-caption");
+    if (state.steps){
+      if (!cap){
+        cap = document.createElement("div");
+        cap.className = "thumb-caption";
+        thumb.appendChild(cap);
+      }
+      cap.textContent = "📍≈" + fmtDist(state.steps) + "m";
+    } else if (cap){
+      cap.remove();
+    }
+  }
+
+  function updateMeasureRowUI(row, state){
+    if (!row) return;
+    const btn = row.querySelector('[data-role="measurebtn"]');
+    const mini = row.querySelector('[data-role="measureresultmini"]');
+    if (!btn || !mini) return;
+    if (state.measureCm){
+      const lbl = state.measureLabel ? state.measureLabel + ": " : "";
+      mini.textContent = "📏 " + lbl + "≈" + state.measureCm + " cm";
+      btn.innerHTML = '✏️ Editar medida <span class="zh">编辑测量</span>';
+    } else {
+      mini.textContent = "";
+      btn.innerHTML = '📏 Medir en la foto <span class="zh">在照片中测量</span>';
+    }
+  }
+
+  /* ============================================================
+     Medir en la foto (regla de referencia): a partir de un objeto de
+     medida YA CONOCIDA que aparece en la propia foto (ducto de
+     ventilación, cuadrícula de malla, u otro objeto que el inspector
+     escriba), se calcula una escala aproximada de esa foto y con ella
+     la medida de lo que se quiera (ancho de grieta, altura de un
+     desprendimiento, etc.). 100% offline -- es solo geometría sobre
+     <canvas>, sin ningún servicio externo.
+     La lista de referencias conocidas (ducto=90cm, malla=10cm, etc.) se
+     alimenta desde la pestaña Maestro / 主表 (columna REFERENCIAS_MEDIDA,
+     formato "Nombre = centímetros" por fila) -- así se pueden agregar o
+     afinar referencias propias de cada operación sin tocar el código.
+     IMPORTANTE (limitación real, no de la implementación): solo es
+     confiable si el objeto de referencia y lo medido están más o menos
+     en el mismo plano/distancia de la cámara y la foto es de frente,
+     no en ángulo -- igual que la técnica de campo con el martillo.
+     ============================================================ */
+  function parseMeasureRefs(){
+    const raw = (MASTER && MASTER.REFERENCIAS_MEDIDA) || [];
+    const list = [];
+    raw.forEach(line => {
+      const m = String(line || "").split("=");
+      if (m.length < 2) return;
+      const label = m[0].trim();
+      const cm = parseFloat(m.slice(1).join("=").trim());
+      if (label && !isNaN(cm) && cm > 0) list.push({key: "ref" + list.length, label, cm});
+    });
+    return list;
+  }
+
+  let measureRowEl = null;     // <div class="item-row"> que se está midiendo
+  let measureItemState = null; // itemState entry correspondiente
+  let measureImg = null;
+  let measurePoints = [];        // puntos del par que se está marcando ahora mismo
+  let measureRefPoints = null;   // par ya confirmado (referencia)
+  let measureRefPxDist = null;
+  let measureTargetPoints = null; // par ya confirmado (lo que se mide)
+
+  function buildMeasureRefOptions(){
+    const wrap = document.getElementById("measureRefs");
+    const prevChecked = (document.querySelector('input[name="measureRef"]:checked') || {}).value;
+    const refs = parseMeasureRefs();
+    let html = refs.map((r, i) => `
+      <label class="measure-ref-opt"><input type="radio" name="measureRef" value="${esc(r.key)}" data-cm="${r.cm}" ${i===0 ? "checked":""}>
+        ${esc(r.label)} — ${r.cm} cm</label>`).join("");
+    html += `<label class="measure-ref-opt"><input type="radio" name="measureRef" value="otro"> Otro objeto / medida personalizada <span class="zh">其他/自定义</span></label>`;
+    wrap.innerHTML = html;
+    // restaura la selección previa si sigue existiendo (ej. al reabrir el modal)
+    if (prevChecked && wrap.querySelector(`input[value="${CSS.escape(prevChecked)}"]`)){
+      wrap.querySelector(`input[value="${CSS.escape(prevChecked)}"]`).checked = true;
+    }
+    wrap.querySelectorAll('input[name="measureRef"]').forEach(r => r.addEventListener("change", () => {
+      updateMeasureRefExtraVisibility();
+      if (measureTargetPoints) showMeasureResult();
+    }));
+  }
+  function currentMeasureRefKey(){
+    const el = document.querySelector('input[name="measureRef"]:checked');
+    return el ? el.value : "otro";
+  }
+  function currentMeasureRefBaseCm(){
+    const el = document.querySelector('input[name="measureRef"]:checked');
+    if (!el || el.value === "otro") return parseFloat(document.getElementById("measureOtroCm").value) || 0;
+    return parseFloat(el.dataset.cm) || 0;
+  }
+  function currentMeasureRefCm(){
+    const key = currentMeasureRefKey();
+    const base = currentMeasureRefBaseCm();
+    if (key === "otro") return base; // el multiplicador no aplica a "otro": ahí ya se escribe la medida exacta
+    const mult = parseFloat(document.getElementById("measureMultInput").value) || 1;
+    return base * mult;
+  }
+  function updateMeasureRefExtraVisibility(){
+    const ref = currentMeasureRefKey();
+    document.getElementById("measureMultExtra").hidden = ref === "otro";
+    document.getElementById("measureOtroExtra").hidden = ref !== "otro";
+  }
+  function updateMeasureInstruction(){
+    const el = document.getElementById("measureInstruction");
+    if (!measureRefPoints){
+      el.innerHTML = 'Paso 1: toca los DOS extremos de la referencia en la foto.<span class="zh">第1步：在照片中点击参照物的两端。</span>';
+    } else if (!measureTargetPoints){
+      el.innerHTML = 'Paso 2: toca los DOS extremos de lo que quieres medir.<span class="zh">第2步：点击要测量物体的两端。</span>';
+    } else {
+      el.innerHTML = 'Listo -- puedes guardar, o "Rehacer puntos" para repetir.<span class="zh">完成 -- 可以保存，或点击"重新标记"重新开始。</span>';
+    }
+  }
+  function pxDist(a, b){ return Math.hypot(a.x - b.x, a.y - b.y); }
+
+  function redrawMeasureCanvas(){
+    const canvas = document.getElementById("measureCanvas");
+    const ctx = canvas.getContext("2d");
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    if (measureImg) ctx.drawImage(measureImg, 0, 0, canvas.width, canvas.height);
+    function drawPair(pts, color){
+      if (!pts || !pts.length) return;
+      ctx.fillStyle = color; ctx.strokeStyle = color; ctx.lineWidth = 2;
+      pts.forEach(p => { ctx.beginPath(); ctx.arc(p.x, p.y, 6, 0, Math.PI*2); ctx.fill(); });
+      if (pts.length === 2){ ctx.beginPath(); ctx.moveTo(pts[0].x, pts[0].y); ctx.lineTo(pts[1].x, pts[1].y); ctx.stroke(); }
+    }
+    drawPair(measureRefPoints, "#F2701D");
+    drawPair(measureTargetPoints, "#4FD1C5");
+    if (!measureRefPoints) drawPair(measurePoints, "#F2701D");
+    else if (!measureTargetPoints) drawPair(measurePoints, "#4FD1C5");
+  }
+
+  function showMeasureResult(){
+    const refCm = currentMeasureRefCm();
+    const resEl = document.getElementById("measureResult");
+    if (!refCm || refCm <= 0 || !measureRefPxDist || !measureTargetPoints){ resEl.hidden = true; return; }
+    const targetPxDist = pxDist(measureTargetPoints[0], measureTargetPoints[1]);
+    const cmPerPx = refCm / measureRefPxDist;
+    const resultCm = targetPxDist * cmPerPx;
+    resEl.hidden = false;
+    resEl.textContent = "Medida estimada: ≈ " + resultCm.toFixed(1) + " cm";
+    resEl.dataset.cm = resultCm.toFixed(1);
+    document.getElementById("measureLabelRow").hidden = false;
+    document.getElementById("measureModalSave").disabled = false;
+  }
+
+  function handleMeasureCanvasClick(ev){
+    if (measureTargetPoints) return; // ya se marcaron ambos pares
+    const canvas = document.getElementById("measureCanvas");
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width, scaleY = canvas.height / rect.height;
+    const x = (ev.clientX - rect.left) * scaleX;
+    const y = (ev.clientY - rect.top) * scaleY;
+    measurePoints.push({x, y});
+    if (measurePoints.length === 2){
+      if (!measureRefPoints){
+        measureRefPoints = measurePoints;
+        measureRefPxDist = pxDist(measureRefPoints[0], measureRefPoints[1]);
+      } else {
+        measureTargetPoints = measurePoints;
+        showMeasureResult();
+      }
+      measurePoints = [];
+    }
+    updateMeasureInstruction();
+    redrawMeasureCanvas();
+  }
+
+  function resetMeasurePoints(){
+    measurePoints = []; measureRefPoints = null; measureRefPxDist = null; measureTargetPoints = null;
+    document.getElementById("measureResult").hidden = true;
+    document.getElementById("measureLabelRow").hidden = true;
+    document.getElementById("measureModalSave").disabled = true;
+    updateMeasureInstruction();
+    redrawMeasureCanvas();
+  }
+
+  function openMeasureModal(row, state){
+    measureRowEl = row; measureItemState = state;
+    resetMeasurePoints();
+    document.getElementById("measureLabelInput").value = state.measureLabel || "";
+    buildMeasureRefOptions();
+    updateMeasureRefExtraVisibility();
+    const canvas = document.getElementById("measureCanvas");
+    measureImg = new Image();
+    measureImg.onload = () => {
+      const wrapEl = canvas.parentElement;
+      const maxW = Math.min(560, (wrapEl && wrapEl.clientWidth) || 320) || 320;
+      const scale = Math.min(1, maxW / measureImg.width);
+      canvas.width = Math.max(1, Math.round(measureImg.width * scale));
+      canvas.height = Math.max(1, Math.round(measureImg.height * scale));
+      redrawMeasureCanvas();
+    };
+    measureImg.src = state.photo;
+    document.getElementById("measureModalBackdrop").hidden = false;
+  }
+
+  function closeMeasureModal(){
+    document.getElementById("measureModalBackdrop").hidden = true;
+    measureRowEl = null; measureItemState = null; measureImg = null;
+  }
+
+  function initMeasureModal(){
+    buildMeasureRefOptions();
+    document.getElementById("measureMultInput").addEventListener("input", () => { if (measureTargetPoints) showMeasureResult(); });
+    document.getElementById("measureOtroCm").addEventListener("input", () => { if (measureTargetPoints) showMeasureResult(); });
+    document.getElementById("measureCanvas").addEventListener("click", handleMeasureCanvasClick);
+    document.getElementById("measureUndo").addEventListener("click", resetMeasurePoints);
+    document.getElementById("measureModalClose").addEventListener("click", closeMeasureModal);
+    document.getElementById("measureModalCancel").addEventListener("click", closeMeasureModal);
+    document.getElementById("measureModalSave").addEventListener("click", () => {
+      if (!measureItemState) return;
+      const resEl = document.getElementById("measureResult");
+      measureItemState.measureCm = parseFloat(resEl.dataset.cm) || null;
+      measureItemState.measureLabel = document.getElementById("measureLabelInput").value.trim();
+      updateMeasureRowUI(measureRowEl, measureItemState);
+      toast("Medida guardada / 测量已保存");
+      closeMeasureModal();
+    });
   }
 
   function updateGroupProgress(groupEl){
@@ -414,7 +895,9 @@
       es: g.es, zh: g.zh, nota: g.nota,
       items: g.items.map((it, ii) => {
         const s = itemState.find(x => x.uid === gi + "_" + ii);
-        return {es: it.es, zh: it.zh, status:s.status, obs:s.obs, photo:s.photo};
+        const distanceM = s.steps ? +(s.steps * getCalibrationFactor()).toFixed(1) : null;
+        return {es: it.es, zh: it.zh, status:s.status, obs:s.obs, photo:s.photo, steps:s.steps||0, distanceM,
+                measureCm: s.measureCm || null, measureLabel: s.measureLabel || ""};
       })
     }));
     const answered = itemState.filter(s => s.status);
@@ -441,9 +924,12 @@
       const rows = g.items.map(it => {
         const pillClass = it.status === "Cumple" ? "ok" : it.status === "No Cumple" ? "bad" : it.status === "N/A" ? "na" : "blank";
         const pillTxt = it.status || "—";
-        const img = it.photo ? `<img src="${it.photo}" alt="evidencia">` : "";
+        const distCaption = it.photo && it.steps ? `<div class="thumb-caption">📍≈${it.distanceM}m</div>` : "";
+        const img = it.photo ? `<div class="detail-img-wrap">${distCaption}<img src="${it.photo}" alt="evidencia"></div>` : "";
         const obs = it.obs ? `<span class="dobs">${esc(it.obs)}</span>` : "";
-        return `<div class="detail-item"><span class="pill ${pillClass}">${esc(pillTxt)}</span><span class="dtext">${esc(it.es)}${obs}</span>${img}</div>`;
+        const dist = it.steps ? `<span class="dobs">📍 ${it.steps} pasos ≈ ${it.distanceM} m desde el ingreso / 距入口约${it.distanceM}米</span>` : "";
+        const meas = it.measureCm ? `<span class="dobs">📏 ${it.measureLabel ? esc(it.measureLabel) + ": " : ""}≈ ${it.measureCm} cm / 约${it.measureCm}厘米</span>` : "";
+        return `<div class="detail-item"><span class="pill ${pillClass}">${esc(pillTxt)}</span><span class="dtext">${esc(it.es)}${obs}${dist}${meas}</span>${img}</div>`;
       }).join("");
       return `<div class="detail-group"><h5>${esc(g.es)} <span style="color:var(--ink-soft);font-weight:400">${esc(g.zh)}</span></h5>${rows}</div>`;
     }).join("");
@@ -494,7 +980,13 @@
   }
 
   function resetForm(){
-    itemState.forEach(s => { s.status=""; s.obs=""; s.photo=""; });
+    itemState.forEach(s => { s.status=""; s.obs=""; s.photo=""; s.steps=0; s.stepsManual=false; s.measureCm=null; s.measureLabel=""; });
+    closeMeasureModal();
+    if (stepCounterActive) stopStepCounter();
+    stepCount = 0; stepSetupOK = false; stepSensorOK = false;
+    updateStepCounterUI();
+    const permNote = document.getElementById("stepCounterPermNote");
+    if (permNote){ permNote.hidden = true; permNote.classList.remove("perm-warn"); }
     buildGroups();
     SIGNERS.forEach(s => sigState[s.key] = {name:"", dataUrl:"", ts:""});
     buildSignatures();
@@ -801,7 +1293,8 @@
 
   function buildHallazgosRows(recs){
     const header = ["ID Hallazgo","ID Registro","Fecha","Labor (panel)","Turno","Guardia","Inspector",
-                     "Grupo","Estandar (No Cumple)","标准 (不符合)","Observacion","Foto","Estado cierre"];
+                     "Grupo","Estandar (No Cumple)","标准 (不符合)","Observacion","Foto","Estado cierre",
+                     "Pasos desde ingreso","Distancia estimada (m)","Medida en foto (cm)","Que se midio"];
     const rows = [header];
     let seq = 0;
     const hallazgosConFoto = [];
@@ -813,7 +1306,9 @@
             const ncId = "NC-" + String(seq).padStart(4,"0");
             rows.push([ncId, rec.id, rec.header.fecha||"", rec.header.labor||"", rec.header.turno||"",
                        rec.header.guardia||"", rec.header.inspector||"", g.es, it.es, it.zh, it.obs||"",
-                       it.photo ? "FOTO_ADJUNTA" : "Sin foto", "PENDIENTE"]);
+                       it.photo ? "FOTO_ADJUNTA" : "Sin foto", "PENDIENTE",
+                       it.steps || "", it.distanceM == null ? "" : it.distanceM,
+                       it.measureCm == null ? "" : it.measureCm, it.measureLabel || ""]);
             if (it.photo) hallazgosConFoto.push({ncId, foto: it.photo, rowIdx: rows.length-1});
           }
         });
@@ -1086,8 +1581,12 @@
         if (hasZh){ setZh(7.6); zhLines = doc.splitTextToSize(it.zh, CW-32); }
         let obsLines = [];
         if (it.obs){ setEs(8); obsLines = doc.splitTextToSize("Obs / 备注: " + it.obs, CW-32); }
+        let distLines = [];
+        if (it.steps){ setEs(8); distLines = doc.splitTextToSize(`Distancia desde el ingreso / 距入口距离: ${it.steps} pasos ~= ${it.distanceM} m`, CW-32); }
+        let measLines = [];
+        if (it.measureCm){ setEs(8); measLines = doc.splitTextToSize(`Medida en la foto / 照片测量: ${it.measureLabel ? it.measureLabel + " " : ""}~= ${it.measureCm} cm`, CW-32); }
 
-        const textH = 3.8 + esLines.length*4.2 + zhLines.length*3.6 + (obsLines.length ? obsLines.length*3.8+1.5 : 0);
+        const textH = 3.8 + esLines.length*4.2 + zhLines.length*3.6 + (obsLines.length ? obsLines.length*3.8+1.5 : 0) + (distLines.length ? distLines.length*3.8+1.5 : 0) + (measLines.length ? measLines.length*3.8+1.5 : 0);
         // la foto se dibuja DEBAJO del texto (no al lado), así que su alto se suma, no se
         // toma el máximo -- si no, la siguiente fila arranca antes de que termine la imagen
         const photoH = it.photo ? 19.5 + 2 : 0;
@@ -1117,6 +1616,16 @@
           setEs(8, "italic"); doc.setTextColor(90,100,110);
           doc.text(obsLines, M+30, ly+1.5);
           ly += obsLines.length*3.8 + 1.5;
+        }
+        if (distLines.length){
+          setEs(8, "bold"); doc.setTextColor(214,93,15);
+          doc.text(distLines, M+30, ly+1.5);
+          ly += distLines.length*3.8 + 1.5;
+        }
+        if (measLines.length){
+          setEs(8, "bold"); doc.setTextColor(20,140,130);
+          doc.text(measLines, M+30, ly+1.5);
+          ly += measLines.length*3.8 + 1.5;
         }
         if (it.photo){
           try{
@@ -1309,8 +1818,10 @@
     localStorage.removeItem("qaqc_maestro");
     localStorage.removeItem("qaqc_maestro_meta");
     localStorage.removeItem("qaqc_maestro_derive");
+    localStorage.removeItem("qaqc_maestro_actividad_fase");
     MASTER = loadMaster();
     PANEL_DERIVE = loadPanelDerive();
+    ACTIVIDAD_FASE = loadActividadFase();
     buildHeaderFields();
     syncSignerNames();
     updateMaestroBadges();
@@ -1346,14 +1857,21 @@
     if (idxName === -1 || idxCategory === -1) return null; // no es este formato
 
     const idxActive = findColIndex(headerRow, ["Active"]);
-    const idxActivity = findColIndex(headerRow, ["Activity"]);
+    // Formato anterior: una sola columna "Activity" con todas las actividades juntas.
+    const idxActivity = findColIndex(headerRow, ["Activity","Actividad"]);
+    // Formato reorganizado (tblPreparation / tblProduction): dos listas separadas por fase,
+    // cada una en su propia tabla con nombre -- se usan para filtrar el desplegable de
+    // Actividad según la Fase ya elegida/derivada (ver actividadPorFase más abajo).
+    const idxPrepActivity = findColIndex(headerRow, ["Preparation Activity"]);
+    const idxProdActivity = findColIndex(headerRow, ["Production Activity"]);
     const idxInspector = findColIndex(headerRow, ["Inspector"]);
     const idxShift = findColIndex(headerRow, ["Shift"]);
     const idxContractor = findColIndex(headerRow, ["Contractor"]);
     const idxGuard = findColIndex(headerRow, ["Guard"]);
     const idxSupervisor = findColIndex(headerRow, ["Supervisor"]);
     const idxMachine = findColIndex(headerRow, ["Machine name","Machine"]);
-    const idxCodigo = findColIndex(headerRow, ["Codigo","Código"]);
+    // "Codigo" (formato anterior) o "Machine Codigo" (tblMachine en el maestro reorganizado).
+    const idxCodigo = findColIndex(headerRow, ["Codigo","Código","Machine Codigo","Machine Código"]);
     const idxOperator = findColIndex(headerRow, ["Operator name","Operator"]);
     const idxRange = findColIndex(headerRow, ["Range"]);
 
@@ -1408,6 +1926,27 @@
       if (cat) fase[name] = normFase(cat);
     }
 
+    // Actividades: si el maestro trae las dos listas separadas (Preparación/Producción),
+    // se usan para filtrar el desplegable de Actividad según la Fase ya elegida/derivada;
+    // ACTIVIDADES sigue guardando la unión de ambas (compatibilidad con plantilla/vista previa).
+    // Si el archivo trae el formato anterior (una sola columna "Activity"), no hay filtro por
+    // fase disponible y se usa esa lista combinada tal cual, como hasta ahora.
+    let actividadPorFase = null;
+    let actividadesUnion;
+    if (idxPrepActivity !== -1 || idxProdActivity !== -1){
+      const prep = uniqCol(idxPrepActivity);
+      const prod = uniqCol(idxProdActivity);
+      actividadPorFase = {
+        "Preparación / 准备": prep,
+        "Producción / 生产": prod,
+      };
+      const seenAct = new Set();
+      actividadesUnion = [];
+      prep.concat(prod).forEach(v => { if (!seenAct.has(v)){ seenAct.add(v); actividadesUnion.push(v); } });
+    } else {
+      actividadesUnion = uniqCol(idxActivity);
+    }
+
     const master = {
       PANELES,
       TIPO_PANEL: ["STOPE","UPPER"],
@@ -1419,11 +1958,11 @@
       OPERADORES_EQUIPO: uniqCombo(idxOperator, idxRange, " — "),
       CODIGOS_EQUIPO: uniqCombo(idxMachine, idxCodigo, " — "),
       FASES: ["Producción / 生产","Preparación / 准备"],
-      ACTIVIDADES: uniqCol(idxActivity),
+      ACTIVIDADES: actividadesUnion,
     };
     const found = Object.keys(master).filter(k => (master[k]||[]).length);
     if (!found.length) return null;
-    return {master, found, tipo, fase};
+    return {master, found, tipo, fase, actividadPorFase};
   }
 
   async function importMaestroFile(file){
@@ -1496,9 +2035,18 @@
       const derive = {tipo: real.tipo, fase: real.fase};
       localStorage.setItem("qaqc_maestro_derive", JSON.stringify(derive));
       PANEL_DERIVE = derive;
+      if (real.actividadPorFase){
+        localStorage.setItem("qaqc_maestro_actividad_fase", JSON.stringify(real.actividadPorFase));
+        ACTIVIDAD_FASE = real.actividadPorFase;
+      } else {
+        localStorage.removeItem("qaqc_maestro_actividad_fase");
+        ACTIVIDAD_FASE = null;
+      }
     } else {
       localStorage.removeItem("qaqc_maestro_derive");
       PANEL_DERIVE = loadPanelDerive();
+      localStorage.removeItem("qaqc_maestro_actividad_fase");
+      ACTIVIDAD_FASE = null;
     }
     MASTER = newMaster;
 
@@ -1527,6 +2075,8 @@
      Arranque
      ============================================================ */
   buildHeaderFields();
+  initStepCounter();
+  initMeasureModal();
   buildGroups();
   buildSignatures();
   updateMaestroBadges();

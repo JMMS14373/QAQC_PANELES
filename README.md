@@ -33,13 +33,30 @@ una app, incluso sin señal.
   nuevo, si el maestro cargado trae esa relación, la app completa automáticamente si es STOPE o
   UPPER y si está en Producción o Preparación (editable igual, por si hace falta corregir).
 - **Pestaña "Maestro / 主表" reconoce el archivo real `Maestro_Paneles.xlsx`**: ya no hace falta
-  reformatear nada — puedes subir el archivo tal como lo manejan hoy (columnas Activity, Inspector,
-  Shift, Contractor, Guard, Supervisor, Machine name, Codigo, Operator name, Range, Name, Category,
-  Active). La app detecta automáticamente ese formato (por las columnas Name + Category), separa
-  las listas correspondientes y deriva el tipo de panel (STOPE/UPPER) y la fase de cada uno a partir
-  del nombre y la categoría. Si subes un archivo con otro formato, sigue funcionando la plantilla
+  reformatear nada — puedes subir el archivo tal como lo manejan hoy. La app detecta automáticamente
+  ese formato (por las columnas Name + Category del bloque de paneles), separa las listas
+  correspondientes y deriva el tipo de panel (STOPE/UPPER) y la fase de cada uno a partir del
+  nombre y la categoría. Si subes un archivo con otro formato, sigue funcionando la plantilla
   simple de esta app (una lista por columna) como respaldo — puedes descargarla desde la misma
   pestaña.
+  - Reconoce tanto el formato anterior (una sola columna "Activity" y "Codigo") como el
+    reorganizado en tablas con nombre (`tblPreparation`, `tblProduction`, `tblInspector`,
+    `tblShift`, `tblContractor`, `tblGuard`, `tblSupervisor`, `tblMachine` con columna
+    "Machine Codigo", `tblOperator`, `tblFronts`) — no importa cuál de los dos traiga el
+    archivo, ambos se leen igual de bien.
+  - **Actividad filtrada por Fase**: cuando el maestro trae las actividades separadas en dos
+    tablas ("Preparation Activity" / "Production Activity", como en `tblPreparation` y
+    `tblProduction`), el campo Actividad de "Nuevo registro" solo sugiere las que corresponden
+    a la Fase ya elegida (Producción o Preparación) — al cambiar la Fase (a mano, o
+    automáticamente al elegir la Labor/panel) la lista de sugerencias se actualiza sola. Si el
+    maestro no trae esa separación (formato anterior, o los datos de ejemplo), el campo sigue
+    mostrando todas las actividades juntas, como antes. La lista completa (unión de ambas)
+    sigue guardada igual en la vista previa del Maestro y en la plantilla descargable.
+  - Los códigos que trae el archivo (Inspector Code, Supervisor Code, Preparation/Production
+    Code) por ahora solo se guardan internamente — el nombre sigue siendo lo único que se ve
+    en los desplegables, el registro y el PDF, igual que hasta ahora para Inspector y
+    Supervisor (Operador de equipo y Código de equipo sí muestran "Nombre — Código", como ya
+    venían haciendo).
 - **Actividades**: la lista de ejemplo de "Actividad" ahora trae las 43 actividades reales del
   ciclo de explotación tal como aparecen en el maestro (topografía, perforación, marcación, cable
   bolt, voladura, rellenos, etc.) — es contenido no sensible (nombres de tareas, no de personas),
@@ -108,9 +125,10 @@ su propio directorio o por debajo de él.
   Activity/Inspector/Shift/Contractor/Guard/Supervisor/Machine name/Codigo/Operator name/Range/
   Name/Category/Active — detectado automáticamente) o la plantilla simple de esta app (una lista
   por columna: PANELES, TIPO_PANEL, TURNOS, GUARDIAS, INSPECTORES, SUPERVISORES, EMPRESAS,
-  OPERADORES_EQUIPO, CODIGOS_EQUIPO, FASES, ACTIVIDADES). También puedes descargar una plantilla en
-  blanco o restablecer a los datos de ejemplo. Se guarda en `localStorage` de ese
-  navegador/dispositivo.
+  OPERADORES_EQUIPO, CODIGOS_EQUIPO, FASES, ACTIVIDADES, REFERENCIAS_MEDIDA). También puedes
+  descargar una plantilla en blanco o restablecer a los datos de ejemplo. Se guarda en
+  `localStorage` de ese navegador/dispositivo. La columna `REFERENCIAS_MEDIDA` alimenta la
+  herramienta "Medir en la foto" (ver más abajo) — cada celda va en formato "Nombre = cm".
 - **Exportación**: cada registro (o todo el archivo) se puede descargar como Excel (dos hojas:
   `BD_Registros` y `Hallazgos_NC` con fotos incrustadas cuando es posible) o como CSV si no hay
   internet — el Excel completo (SheetJS) se carga solo la primera vez que se necesita y solo si
@@ -157,6 +175,70 @@ su propio directorio o por debajo de él.
   ("Eliminar" en cada tarjeta) o todos de una vez ("Eliminar todos los registros" en la barra
   superior, con confirmación) — siempre exporta antes de eliminar, ya que no hay forma de
   recuperar un registro borrado.
+- **Contador de pasos (distancia estimada desde el ingreso)**: en "Nuevo registro", una tarjeta
+  "Contador de pasos" con un botón "Iniciar ingreso a labor" arranca un conteo de pasos usando el
+  sensor de movimiento del propio teléfono (acelerómetro vía `DeviceMotionEvent`) — **100% offline,
+  no usa internet ni ninguna librería externa**, igual que el resto del formulario. Al tocar el botón
+  de Cámara o Galería para documentar una condición, el conteo se **pausa automáticamente en ese
+  instante** (antes de abrir la foto) para que el manejo del teléfono mientras el inspector está
+  detenido (encuadrar, tomar la foto, escribir la observación) no sume pasos falsos; ese ítem queda
+  con los pasos recorridos hasta ese punto (congelados por la pausa), y la app muestra un botón
+  "▶ Reanudar conteo" que el inspector toca cuando retoma la caminata hacia el siguiente punto —
+  el conteo NO se reanuda solo, es una decisión explícita del inspector para que el dato sea
+  confiable. La distancia se calcula multiplicando por un "factor de calibración" (m/paso)
+  configurable — el valor por defecto es 0.70, pero cada inspector puede ajustarlo al suyo propio
+  (queda guardado en ese dispositivo; como referencia, la fórmula típica estatura×0.413 (mujeres) /
+  ×0.415 (hombres) da resultados cercanos a ese valor por defecto). El número de pasos de cada ítem
+  SIEMPRE queda editable a mano (aparece justo debajo de los botones de cámara/galería una vez que
+  el ítem tiene evidencia), para que el inspector lo corrija con su propio criterio si el sensor se
+  equivocó — por ejemplo por vibración de equipos cercanos o terreno irregular. Si el
+  dispositivo/navegador no tiene el sensor disponible, o el inspector no otorga el permiso que pide
+  iOS la primera vez, la app avisa y el campo de pasos se puede llenar completamente a mano (no
+  bloquea nada, y en ese caso tampoco aparece el botón "Reanudar", ya que no hay sensor que
+  reanudar). La distancia estimada de cada condición reportada queda guardada en el registro y se
+  ve en el detalle de Archivo, en el PDF (junto a la evidencia) y en una columna del Excel (hoja
+  `Hallazgos_NC`). **Importante**: no es un GPS ni un podómetro exacto — es una ayuda basada en
+  detección de picos del acelerómetro, pensada para acercarse a la distancia real (como el cálculo
+  mental "mis pasos × mi factor" que ya usan los inspectores), no para reemplazarlo. Además, la
+  distancia queda como un pequeño pie de foto superpuesto directamente sobre la miniatura de la
+  evidencia (📍≈X m), tanto al capturarla en el formulario como al revisarla en el detalle de
+  Archivo — así queda inseparable de la foto a simple vista, sin necesidad de mezclarla con el
+  texto libre de "Observaciones" (ese campo queda intacto para lo que el inspector quiera escribir).
+- **Medir en la foto (escala a partir de un objeto de referencia)**: además de la distancia desde
+  el ingreso, cada ítem con evidencia fotográfica tiene un botón "📏 Medir en la foto" que abre una
+  ventana para estimar en centímetros el ancho, alto o largo de la condición reportada — pensado
+  para reemplazar descripciones vagas ("muy ancho", "muy retirado") por un número, sin necesitar
+  ningún sensor ni conexión. Funciona con la técnica clásica de campo: se marca en la misma foto un
+  objeto cuya medida real ya se conoce (referencia) y luego el objeto que se quiere medir; la app
+  calcula la escala en píxeles entre los dos y aplica esa escala a lo que se midió. Pasos:
+  1. El inspector elige una **referencia** de una lista (ducto de ventilación, malla, u "Otro objeto
+     / medida personalizada" si prefiere indicar el tamaño real él mismo, por ejemplo el de un
+     extintor o una caja eléctrica visibles en la foto).
+  2. Toca los dos extremos de esa referencia en la foto (Paso 1), y luego los dos extremos de lo
+     que quiere medir (Paso 2). Si la referencia se repite varias veces en la línea marcada (por
+     ejemplo 5 cuadros de malla seguidos), el campo "¿Cuántas veces se repite?" multiplica el
+     tamaño de referencia (5 × 10 cm = 50 cm) antes de calcular la escala.
+  3. La app muestra la medida estimada en cm y permite anotar opcionalmente qué se midió (ej.
+     "Ancho de la grieta"); al guardar, queda junto al ítem, editable/rehacible en cualquier momento
+     mientras el registro no se haya enviado.
+  - **Limitación importante (misma que en el trabajo de campo con un martillo de escala)**: esta
+    técnica solo es confiable si la referencia y el objeto medido están aproximadamente en el mismo
+    plano/distancia de la cámara y la foto se tomó de frente (no en ángulo fuerte ni con zoom
+    digital fuerte sobre un solo punto) — no es una medición topográfica exacta, es una **estimación
+    de apoyo** para dar una cifra de referencia en vez de una descripción cualitativa. Por eso no se
+    usa el ancho/alto de diseño de la labor (GA/CX) como referencia automática: las condiciones
+    subestándar reportadas son justamente las que pueden desviarse de esas medidas de diseño.
+  - **Lista de referencias editable desde el Maestro**: las referencias disponibles (nombre + cm)
+    ya NO están fijas en el código — se leen de la nueva columna `REFERENCIAS_MEDIDA` del maestro
+    (mismo archivo/plantilla que las demás listas desplegables), con el formato **"Nombre = cm"**
+    por celda (ej. `Ducto de ventilación = 90`, `Malla (1 cuadro) = 10`). Así la operación puede
+    agregar nuevas referencias con el tiempo (medida de extintor, caja eléctrica, patrón de
+    barrenación estándar, etc.) sin tocar el código de la app — solo agregando filas a esa columna
+    en el maestro y volviendo a cargarlo. Si no se carga un maestro propio, la app trae de ejemplo
+    el ducto (90 cm) y la malla (10 cm).
+  - La medida guardada (cm + qué se midió) se exporta igual que la distancia: aparece en el detalle
+    de Archivo, en el PDF (junto a la evidencia) y en columnas propias de la hoja `Hallazgos_NC` del
+    Excel.
 - Todo el archivo de registros vive en `localStorage` de ese navegador — cada inspector ve y
   exporta SUS PROPIOS registros de ese dispositivo. No hay sincronización automática entre
   dispositivos todavía (ver más abajo).
