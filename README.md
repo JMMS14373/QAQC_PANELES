@@ -199,7 +199,16 @@ su propio directorio o por debajo de él.
   ve en el detalle de Archivo, en el PDF (junto a la evidencia) y en una columna del Excel (hoja
   `Hallazgos_NC`). **Importante**: no es un GPS ni un podómetro exacto — es una ayuda basada en
   detección de picos del acelerómetro, pensada para acercarse a la distancia real (como el cálculo
-  mental "mis pasos × mi factor" que ya usan los inspectores), no para reemplazarlo. Además, la
+  mental "mis pasos × mi factor" que ya usan los inspectores), no para reemplazarlo.
+  - **Sensibilidad ajustada tras pruebas de campo**: en la primera versión, el umbral de detección
+    era demasiado bajo — con el teléfono quieto en la mano (solo el pulso/temblor natural, o
+    vibración de equipos cercanos bajo tierra) el contador seguía subiendo solo, como un
+    cronómetro, en vez de responder solo a zancadas reales. Se subió el umbral y además ahora se
+    exigen dos muestras seguidas por encima de él (no solo una) antes de contar un paso, para
+    filtrar ese tipo de ruido puntual. Si en campo el conteo sigue sin ajustarse bien a la
+    situación real (cuenta de más, de menos, o no responde), el número de pasos de cada ítem
+    siempre se puede corregir a mano — no depende de que el sensor quede perfecto.
+  Además, la
   distancia queda como un pequeño pie de foto superpuesto directamente sobre la miniatura de la
   evidencia (📍≈X m), tanto al capturarla en el formulario como al revisarla en el detalle de
   Archivo — así queda inseparable de la foto a simple vista, sin necesidad de mezclarla con el

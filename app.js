@@ -262,9 +262,15 @@
   let stepSensorOK = false;          // true si devicemotion realmente está entregando datos
   let stepBaseline = null;           // línea base de la aceleración "en reposo" (gravedad), se adapta lento
   let stepInPeak = false;            // true mientras seguimos "dentro" del mismo pico (evita contar 2 veces)
+  let stepPendingConfirm = false;    // true si ya vimos 1 muestra sobre el umbral, esperando una 2a seguida para confirmar
   let stepLastTs = 0;                // timestamp del último paso contado (para el "debounce")
-  const STEP_MIN_INTERVAL_MS = 300;  // ~<=3.3 pasos/seg, evita contar el mismo paso 2 veces
-  const STEP_PEAK_THRESHOLD = 1.15;  // aceleración por encima de la línea base que cuenta como paso
+  const STEP_MIN_INTERVAL_MS = 350;  // ~<=2.85 pasos/seg, evita contar el mismo paso 2 veces
+  // Umbral de aceleración por encima de la línea base que cuenta como paso. Subido de 1.15 a 3.2
+  // tras reportes de campo: con el umbral bajo, el simple hecho de sostener el teléfono en la
+  // mano (o vibración de equipos cercanos bajo tierra) generaba "pasos" falsos de forma continua,
+  // como si fuera un cronómetro en vez de un podómetro. Una zancada real, incluso con el teléfono
+  // en la mano, produce picos bastante más marcados que el pulso/vibración ambiental.
+  const STEP_PEAK_THRESHOLD = 3.2;
   const STEP_BASELINE_ALPHA = 0.08;  // qué tan rápido se adapta la línea base (bajo = más lento/estable)
 
   function getCalibrationFactor(){
@@ -306,6 +312,10 @@
   // la señal baja de nuevo cerca de la línea base -- así una sola zancada
   // no se cuenta varias veces aunque lleguen muchas muestras del sensor
   // mientras dura el pico. Además hay un tiempo mínimo entre pasos.
+  // Además, se exige que DOS muestras seguidas superen el umbral antes de
+  // contar el paso (no solo una) -- esto filtra picos de una sola muestra
+  // causados por ruido/vibración puntual, que de otra forma se contaban
+  // como pasos aunque el teléfono estuviera quieto.
   function handleDeviceMotion(ev){
     const a = ev.accelerationIncludingGravity || ev.acceleration;
     if (!a || a.x == null) return;
@@ -315,11 +325,20 @@
     const now = Date.now();
     if (!stepInPeak){
       stepBaseline = stepBaseline*(1-STEP_BASELINE_ALPHA) + mag*STEP_BASELINE_ALPHA;
-      if (mag - stepBaseline > STEP_PEAK_THRESHOLD && (now - stepLastTs) > STEP_MIN_INTERVAL_MS){
-        stepInPeak = true;
-        stepLastTs = now;
-        stepCount++;
-        updateStepCounterUI();
+      const over = (mag - stepBaseline) > STEP_PEAK_THRESHOLD;
+      if (over && (now - stepLastTs) > STEP_MIN_INTERVAL_MS){
+        if (stepPendingConfirm){
+          // 2a muestra seguida por encima del umbral: confirma el paso
+          stepInPeak = true;
+          stepPendingConfirm = false;
+          stepLastTs = now;
+          stepCount++;
+          updateStepCounterUI();
+        } else {
+          stepPendingConfirm = true; // 1a muestra sobre el umbral -- esperar confirmación
+        }
+      } else if (!over){
+        stepPendingConfirm = false; // se perdió antes de confirmar: probablemente ruido, no un paso
       }
     } else if (mag - stepBaseline < STEP_PEAK_THRESHOLD*0.4){
       stepInPeak = false;
@@ -327,7 +346,7 @@
   }
 
   async function startStepCounter(){
-    stepCount = 0; stepBaseline = null; stepInPeak = false; stepLastTs = 0; stepSensorOK = false;
+    stepCount = 0; stepBaseline = null; stepInPeak = false; stepPendingConfirm = false; stepLastTs = 0; stepSensorOK = false;
     stepCounterActive = true; stepListening = false; stepSetupOK = false;
     updateStepCounterUI();
     const noteEl = document.getElementById("stepCounterPermNote");
@@ -388,7 +407,7 @@
     if (!stepCounterActive || stepListening || !stepSetupOK) return;
     // se reinicia la línea base al reanudar -- la orientación/posición del
     // teléfono pudo cambiar mientras se manejaba para tomar la foto.
-    stepBaseline = null; stepInPeak = false;
+    stepBaseline = null; stepInPeak = false; stepPendingConfirm = false;
     window.addEventListener("devicemotion", handleDeviceMotion);
     stepListening = true;
     updateStepCounterUI();

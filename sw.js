@@ -4,7 +4,7 @@
    Sube CACHE_NAME cada vez que cambies index.html/manifest/iconos para forzar
    que los dispositivos ya instalados recojan la versión nueva. */
 
-const CACHE_NAME = "qaqc-paneles-v11";
+const CACHE_NAME = "qaqc-paneles-v12";
 
 const APP_SHELL = [
   "./",
