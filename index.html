@@ -199,6 +199,10 @@
   .step-counter-note{ font-size:11.5px; color:var(--ink-soft); line-height:1.5; }
   .step-counter-note .zh{ display:block; margin-top:3px; opacity:.85; }
   .step-counter-note.perm-warn{ color:var(--bad-ink); }
+  .step-counter-debug{ font-size:11.5px; color:var(--ink-soft); font-family:"IBM Plex Mono"; background:var(--surface-2); border:1px dashed var(--border-soft); border-radius:8px; padding:6px 10px; }
+  .step-counter-debug[hidden]{ display:none; }
+  .step-counter-debug #stepDebugVal, .step-counter-debug #stepDebugThreshold{ color:var(--accent-text); font-weight:700; }
+  .step-counter-debug .zh{ display:block; margin-top:2px; opacity:.8; font-family:inherit; }
 
   /* ---------- Signatures ---------- */
   .sig-grid{ display:grid; grid-template-columns:repeat(3,1fr); gap:14px; padding:16px; }
@@ -382,6 +386,10 @@
       <div class="step-counter-cfg">
         <label for="stepFactorInput">Factor de calibración (m/paso) <span class="zh">校准系数（米/步）</span></label>
         <input type="number" id="stepFactorInput" min="0.10" max="2" step="0.01" value="0.70">
+      </div>
+      <div class="step-counter-debug" id="stepDebugRow" hidden>
+        Sensibilidad del sensor -- pico reciente: <span id="stepDebugVal">0.0</span> (umbral actual: <span id="stepDebugThreshold"></span>)
+        <span class="zh">传感器灵敏度 -- 最近峰值 / 当前阈值</span>
       </div>
       <div class="step-counter-note" id="stepCounterNote">Funciona sin conexión (usa el sensor del teléfono, no internet). Presiona "Iniciar ingreso a labor" al entrar a la labor; al tocar Cámara/Galería para documentar una condición, el conteo se PAUSA automáticamente (para no sumar pasos falsos por el manejo del teléfono al detenerte) y guarda en ese ítem los pasos recorridos hasta ese punto (siempre editable). Toca "Reanudar conteo" cuando retomes la caminata. Si el sensor no está disponible en tu dispositivo, puedes escribir el número de pasos a mano.<span class="zh">离线可用（使用手机传感器，不需要网络）。进入作业面时点击"开始进入作业面"；点击相机/相册记录条件证据时，计数会自动暂停（避免因停下操作手机而多算步数），并把当时的步数记录到该项（可随时编辑）。继续行走时点击"继续计数"。如果设备没有该传感器，也可以手动输入步数。</span></div>
       <div class="step-counter-note" id="stepCounterPermNote" hidden></div>

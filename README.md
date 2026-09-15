@@ -200,14 +200,19 @@ su propio directorio o por debajo de él.
   `Hallazgos_NC`). **Importante**: no es un GPS ni un podómetro exacto — es una ayuda basada en
   detección de picos del acelerómetro, pensada para acercarse a la distancia real (como el cálculo
   mental "mis pasos × mi factor" que ya usan los inspectores), no para reemplazarlo.
-  - **Sensibilidad ajustada tras pruebas de campo**: en la primera versión, el umbral de detección
-    era demasiado bajo — con el teléfono quieto en la mano (solo el pulso/temblor natural, o
-    vibración de equipos cercanos bajo tierra) el contador seguía subiendo solo, como un
-    cronómetro, en vez de responder solo a zancadas reales. Se subió el umbral y además ahora se
-    exigen dos muestras seguidas por encima de él (no solo una) antes de contar un paso, para
-    filtrar ese tipo de ruido puntual. Si en campo el conteo sigue sin ajustarse bien a la
-    situación real (cuenta de más, de menos, o no responde), el número de pasos de cada ítem
-    siempre se puede corregir a mano — no depende de que el sensor quede perfecto.
+  - **Sensibilidad en calibración, con indicador en pantalla**: en la primera versión, el umbral
+    de detección era demasiado bajo — con el teléfono quieto en la mano (solo el pulso/temblor
+    natural, o vibración de equipos cercanos bajo tierra) el contador seguía subiendo solo, como
+    un cronómetro. Al subirlo se corrigió eso pero quedó demasiado alto para detectar zancadas
+    reales de forma confiable — el punto exacto correcto depende del sensor de cada teléfono, así
+    que en vez de seguir ajustando a ciegas, mientras el contador está activo aparece un indicador
+    **"Sensibilidad del sensor — pico reciente"** junto al conteo, que muestra cada medio segundo
+    qué tan fuerte fue el movimiento más marcado que captó el sensor, junto al umbral actual que
+    se está usando para comparar. Sirve para calibrar con datos reales: parado quieto ese número
+    debería quedar bastante por debajo del umbral; caminando normal, varias veces por encima. Si
+    no es así, es la referencia que hace falta para ajustar `STEP_PEAK_THRESHOLD` en `app.js` al
+    valor correcto para ese modelo de teléfono. Mientras se afina, el número de pasos de cada
+    ítem siempre se puede corregir a mano — no depende de que el sensor quede perfecto.
   Además, la
   distancia queda como un pequeño pie de foto superpuesto directamente sobre la miniatura de la
   evidencia (📍≈X m), tanto al capturarla en el formulario como al revisarla en el detalle de
