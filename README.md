@@ -16,11 +16,13 @@ una app, incluso sin señal.
 - **Estructura de la ficha actualizada según Hoja3**: 11 grupos de estándar y 67 ítems (antes 11
   grupos / 70 ítems de la hoja "QAQC PANELES" original). El grupo "Línea de vida" quedó unificado
   en uno solo ("6. Línea de vida Stope", antes estaba duplicado en derecha/izquierda), se agregó
-  el grupo "9. Fase Cable Bolt" y se ajustó texto en varios ítems. Los dos grupos que en la ficha
+  el grupo "9. Fase Cable Bolt" y se ajustó texto en varios ítems. Los grupos que en la ficha
   de Excel son condicionales (**Línea de vida Stope**: solo aplica si el panel es STOPE; **Voladura**:
-  solo aplica durante carguío de explosivos) se muestran siempre en la app con una nota informativa
-  bajo el título del grupo — el inspector los marca N/A cuando no aplican, en vez de ocultarlos
-  automáticamente (así ningún grupo queda fuera del registro por error de detección).
+  solo aplica durante carguío de explosivos; **4. Preparación del Frente**: solo aplica durante
+  actividades de Producción, en Preparación se marca todo N/A) se muestran siempre en la app con
+  una nota informativa bajo el título del grupo — el inspector los marca N/A cuando no aplican, en
+  vez de ocultarlos automáticamente (así ningún grupo queda fuera del registro por error de
+  detección).
 - **Encabezado actualizado según Hoja3**: Fecha, Inspector, Empresa, Supervisor, Turno,
   Labor (panel), Operador de equipo, Guardia, Fase (Producción/Preparación), Código de equipo,
   Categoría de explotación (STOPE/UPPER) y Actividad. Reemplaza los campos de la versión anterior
