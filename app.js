@@ -265,13 +265,17 @@
   let stepPendingConfirm = false;    // true si ya vimos 1 muestra sobre el umbral, esperando una 2a seguida para confirmar
   let stepLastTs = 0;                // timestamp del último paso contado (para el "debounce")
   const STEP_MIN_INTERVAL_MS = 350;  // ~<=2.85 pasos/seg, evita contar el mismo paso 2 veces
-  // Umbral de aceleración por encima de la línea base que cuenta como paso. Subido de 1.15 a 3.2
-  // tras reportes de campo: con el umbral bajo, el simple hecho de sostener el teléfono en la
-  // mano (o vibración de equipos cercanos bajo tierra) generaba "pasos" falsos de forma continua,
-  // como si fuera un cronómetro en vez de un podómetro. Una zancada real, incluso con el teléfono
-  // en la mano, produce picos bastante más marcados que el pulso/vibración ambiental.
-  const STEP_PEAK_THRESHOLD = 3.2;
+  // Umbral de aceleración por encima de la línea base que cuenta como paso. Empezó en 1.15 (muy
+  // sensible: contaba solo con sostener el teléfono en la mano), se subió a 3.2 tras el primer
+  // reporte de campo (demasiado -- ya no detectaba pasos reales de forma confiable), y queda aquí
+  // en un punto intermedio mientras se calibra con datos reales del sensor de cada teléfono (ver
+  // el indicador "pico reciente" en pantalla, junto al contador, que muestra en vivo qué tan
+  // fuerte detecta el sensor cada movimiento -- compararlo parado quieto vs. caminando es lo que
+  // permite ajustar este número con precisión en vez de adivinar).
+  const STEP_PEAK_THRESHOLD = 2.0;
   const STEP_BASELINE_ALPHA = 0.08;  // qué tan rápido se adapta la línea base (bajo = más lento/estable)
+  let stepDebugMaxDelta = 0;         // mayor "mag - baseline" visto en la ventana reciente (para el indicador en pantalla)
+  let stepDebugTimer = null;         // intervalo que refresca el indicador de sensibilidad en pantalla
 
   function getCalibrationFactor(){
     const el = document.getElementById("stepFactorInput");
@@ -282,6 +286,14 @@
   function fmtDist(steps){
     const factor = getCalibrationFactor();
     return (steps * factor).toFixed(1);
+  }
+
+  // Refresca dos veces por segundo el indicador "pico reciente" (más fácil de leer que un
+  // número que cambia 30-60 veces/seg) y lo vuelve a poner en 0 para la siguiente ventana.
+  function updateStepDebugDisplay(){
+    const val = document.getElementById("stepDebugVal");
+    if (val) val.textContent = stepDebugMaxDelta.toFixed(2);
+    stepDebugMaxDelta = 0;
   }
 
   function updateStepCounterUI(){
@@ -323,6 +335,12 @@
     const mag = Math.sqrt((a.x||0)**2 + (a.y||0)**2 + (a.z||0)**2);
     if (stepBaseline == null) stepBaseline = mag;
     const now = Date.now();
+    // Para el indicador de sensibilidad en pantalla: guarda el mayor "mag - baseline" visto,
+    // independientemente de si llegó a contarse como paso o no (se lee y resetea aparte, ver
+    // updateStepDebugDisplay). Se usa Math.abs porque un frenazo/bajada también puede dar un
+    // delta negativo grande, útil para calibrar igual.
+    const deltaNow = Math.abs(mag - stepBaseline);
+    if (deltaNow > stepDebugMaxDelta) stepDebugMaxDelta = deltaNow;
     if (!stepInPeak){
       stepBaseline = stepBaseline*(1-STEP_BASELINE_ALPHA) + mag*STEP_BASELINE_ALPHA;
       const over = (mag - stepBaseline) > STEP_PEAK_THRESHOLD;
@@ -381,6 +399,13 @@
     window.addEventListener("devicemotion", handleDeviceMotion);
     stepListening = true;
     updateStepCounterUI();
+    const debugRow = document.getElementById("stepDebugRow");
+    const debugThreshold = document.getElementById("stepDebugThreshold");
+    if (debugThreshold) debugThreshold.textContent = STEP_PEAK_THRESHOLD.toFixed(2);
+    if (debugRow) debugRow.hidden = false;
+    stepDebugMaxDelta = 0;
+    if (stepDebugTimer) clearInterval(stepDebugTimer);
+    stepDebugTimer = setInterval(updateStepDebugDisplay, 500);
     toast("Conteo de pasos iniciado / 步数计数已开始");
   }
 
@@ -388,6 +413,9 @@
     stepCounterActive = false; stepListening = false;
     window.removeEventListener("devicemotion", handleDeviceMotion);
     updateStepCounterUI();
+    const debugRow = document.getElementById("stepDebugRow");
+    if (debugRow) debugRow.hidden = true;
+    if (stepDebugTimer){ clearInterval(stepDebugTimer); stepDebugTimer = null; }
     toast("Conteo de pasos detenido (" + stepCount + " pasos) / 步数计数已停止");
   }
 
