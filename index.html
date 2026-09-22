@@ -233,6 +233,15 @@
   .modal-foot{ display:flex; gap:8px; justify-content:flex-end; padding:14px 18px; border-top:1px solid var(--border-soft); }
   .modal-note{ font-size:12.5px; color:var(--ink-soft); }
 
+  /* ---------- PIN de seguridad (bloqueo de la app) ---------- */
+  .pin-overlay{ position:fixed; inset:0; background:var(--paper); z-index:9999; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:24px; box-sizing:border-box; }
+  .pin-logo{ color:var(--accent-text); font-size:22px; font-weight:700; margin-bottom:6px; font-family:"Barlow Condensed"; letter-spacing:.02em; }
+  .pin-sub{ color:var(--ink-soft); font-size:13px; margin-bottom:26px; text-align:center; max-width:280px; }
+  .pin-input{ font-size:32px; letter-spacing:14px; text-align:center; width:180px; padding:14px 8px; background:var(--surface-2); border:2px solid var(--accent); border-radius:12px; color:var(--accent-text); margin-bottom:18px; outline:none; box-sizing:border-box; font-family:"IBM Plex Mono"; }
+  .pin-btn{ background:var(--accent); color:var(--accent-ink); border:none; width:180px; padding:14px; border-radius:10px; font-size:15px; font-weight:700; cursor:pointer; margin-bottom:10px; }
+  .pin-error{ color:var(--bad-ink); font-size:12px; min-height:18px; margin-top:2px; text-align:center; }
+  .pin-hint{ color:var(--ink-soft); font-size:12px; margin-top:18px; text-align:center; text-decoration:underline; cursor:pointer; background:none; border:none; padding:4px; font-family:inherit; }
+
   /* ---------- Medir en la foto ---------- */
   .measure-refs{ display:flex; flex-direction:column; gap:8px; }
   .measure-ref-opt{ display:flex; align-items:center; gap:8px; font-size:13px; padding:8px 10px; border:1px solid var(--border-soft); border-radius:8px; background:var(--surface-2); cursor:pointer; }
@@ -455,6 +464,14 @@
           <button class="btn btn-ghost btn-sm" id="btnDownloadTemplateCsv" type="button">Descargar plantilla CSV</button>
           <button class="btn btn-ghost btn-sm" id="btnResetMaestro" type="button">Restablecer a ejemplo</button>
         </div>
+      </div>
+      <div class="maestro-upload" style="margin-top:14px">
+        <div style="font-weight:600">Seguridad <span style="opacity:.75;font-weight:500">/ 安全</span></div>
+        <p style="font-size:12.5px;color:var(--ink-soft);margin:6px 0 10px">
+          El PIN protege esta app en este dispositivo -- se pide al abrirla y tras 15 minutos sin uso.
+          <span class="zh" style="display:block;margin-top:4px;">PIN码用于保护本设备上的此应用——打开应用或15分钟无操作后需要输入。</span>
+        </p>
+        <button class="btn btn-ghost btn-sm" id="btnCambiarPin" type="button">🔒 Cambiar PIN de seguridad</button>
       </div>
       <div id="maestroPreview"></div>
       <div class="maestro-note">

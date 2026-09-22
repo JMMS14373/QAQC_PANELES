@@ -2119,8 +2119,170 @@
   });
 
   /* ============================================================
+     PIN de seguridad (bloqueo de la app) -- 100% local al dispositivo,
+     igual que el resto de la app: no hay servidor ni cuenta de usuario.
+     Cada quien crea su propio PIN de 4 dígitos la primera vez que abre la
+     app en su celular; se vuelve a pedir tras 15 minutos sin actividad
+     (tocar/hacer clic/teclear). Si se olvida, la única salida es
+     "Olvidé mi PIN": borra el maestro y los registros de ESTE dispositivo
+     (los que no se hayan exportado se pierden) y deja crear un PIN nuevo
+     -- no hay forma de recuperarlo sin borrar, porque no existe backend
+     que guarde una copia del PIN ni de los datos.
+     ============================================================ */
+  const PIN_KEY = "qaqc_pin";
+  const PIN_LAST_ACTIVE_KEY = "qaqc_pin_last_active";
+  const PIN_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutos de inactividad
+  let pinBuffer = "";
+  let pinMode = "";        // "set" | "confirm" | "unlock"
+  let pinFirstEntry = "";
+
+  function pinSaved(){ return !!localStorage.getItem(PIN_KEY); }
+  function pinMatches(p){ return localStorage.getItem(PIN_KEY) === p; }
+  function pinTouchActivity(){ localStorage.setItem(PIN_LAST_ACTIVE_KEY, Date.now().toString()); }
+
+  function pinCheckTimeout(){
+    if (!pinSaved()) return;
+    if (document.getElementById("pinOverlay")) return; // ya está bloqueada
+    const last = parseInt(localStorage.getItem(PIN_LAST_ACTIVE_KEY) || "0", 10);
+    if (Date.now() - last > PIN_TIMEOUT_MS) showPinScreen("unlock");
+  }
+
+  function pinWipeDeviceData(){
+    setRecords([]);
+    localStorage.removeItem("qaqc_maestro");
+    localStorage.removeItem("qaqc_maestro_meta");
+    localStorage.removeItem("qaqc_maestro_derive");
+    localStorage.removeItem("qaqc_maestro_actividad_fase");
+    localStorage.removeItem(PIN_KEY);
+    localStorage.removeItem(PIN_LAST_ACTIVE_KEY);
+    MASTER = loadMaster();
+    PANEL_DERIVE = loadPanelDerive();
+    ACTIVIDAD_FASE = loadActividadFase();
+    buildHeaderFields();
+    syncSignerNames();
+    updateMaestroBadges();
+    renderMaestroPreview();
+    renderArchive();
+  }
+
+  function showPinScreen(mode){
+    pinMode = mode;
+    pinBuffer = "";
+    if (mode === "set") pinFirstEntry = "";
+
+    const prev = document.getElementById("pinOverlay");
+    if (prev) prev.remove();
+
+    const subs = {
+      set: "Elige un PIN de 4 dígitos para proteger la app / 选择4位PIN码保护应用",
+      confirm: "Vuelve a escribir el mismo PIN para confirmar / 请再次输入相同的PIN码以确认",
+      unlock: "La app está bloqueada. Ingresa tu PIN / 应用已锁定，请输入PIN码",
+    };
+
+    const ov = document.createElement("div");
+    ov.id = "pinOverlay";
+    ov.className = "pin-overlay";
+    ov.innerHTML = `
+      <div class="pin-logo">⛏ QAQC PANELES / 面板质量检查</div>
+      <div class="pin-sub">${subs[mode]}</div>
+      <input id="pinInput" type="tel" inputmode="numeric" pattern="[0-9]*" maxlength="4"
+        placeholder="••••" autocomplete="off" class="pin-input">
+      <button id="pinBtn" class="pin-btn" type="button">Confirmar / 确认</button>
+      <div class="pin-error" id="pinError"></div>
+      ${mode === "unlock" ? '<button id="pinForgotBtn" type="button" class="pin-hint">¿Olvidaste tu PIN? / 忘记PIN码？</button>' : ""}
+    `;
+    document.body.appendChild(ov);
+
+    const inp = document.getElementById("pinInput");
+    document.getElementById("pinBtn").addEventListener("click", pinConfirm);
+    inp.addEventListener("input", () => {
+      inp.value = inp.value.replace(/\D/g, "").slice(0, 4);
+      pinBuffer = inp.value;
+    });
+    inp.addEventListener("keydown", (e) => { if (e.key === "Enter") pinConfirm(); });
+    setTimeout(() => inp.focus(), 350);
+
+    const forgotBtn = document.getElementById("pinForgotBtn");
+    if (forgotBtn){
+      forgotBtn.addEventListener("click", () => {
+        const ok = confirm(
+          "Esto borrará el Maestro cargado y TODOS los registros guardados en este dispositivo que no hayas exportado, y te dejará crear un PIN nuevo. No se puede deshacer.\n\n" +
+          "这将清除本设备上已加载的主数据表和所有未导出的记录，且无法撤销。\n\n¿Seguro que quieres continuar?"
+        );
+        if (!ok) return;
+        pinWipeDeviceData();
+        showPinScreen("set");
+        toast("Datos borrados. Crea tu nuevo PIN / 数据已清除，请设置新PIN码", 4000);
+      });
+    }
+  }
+
+  function pinConfirm(){
+    pinTouchActivity();
+    const err = document.getElementById("pinError");
+    const inp = document.getElementById("pinInput");
+    if (err) err.textContent = "";
+    if (inp) pinBuffer = inp.value.replace(/\D/g, "").slice(0, 4);
+
+    if (pinBuffer.length < 4){
+      if (err) err.textContent = "Ingresa 4 dígitos / 请输入4位数字";
+      return;
+    }
+
+    if (pinMode === "set"){
+      pinFirstEntry = pinBuffer;
+      showPinScreen("confirm");
+    } else if (pinMode === "confirm"){
+      if (pinBuffer !== pinFirstEntry){
+        toast("Los PIN no coinciden, vuelve a intentar / 两次输入不一致，请重试", 3200);
+        showPinScreen("set");
+        return;
+      }
+      localStorage.setItem(PIN_KEY, pinBuffer);
+      pinTouchActivity();
+      const ov = document.getElementById("pinOverlay");
+      if (ov) ov.remove();
+      toast("PIN configurado correctamente / PIN码设置成功");
+    } else if (pinMode === "unlock"){
+      if (pinMatches(pinBuffer)){
+        pinTouchActivity();
+        const ov = document.getElementById("pinOverlay");
+        if (ov) ov.remove();
+      } else {
+        pinBuffer = "";
+        if (inp){ inp.value = ""; inp.focus(); }
+        if (err) err.textContent = "PIN incorrecto. Intenta de nuevo / 密码错误，请重试";
+      }
+    }
+  }
+
+  function initPinLock(){
+    document.addEventListener("touchstart", pinTouchActivity);
+    document.addEventListener("click", pinTouchActivity);
+    document.addEventListener("keydown", pinTouchActivity);
+    setInterval(pinCheckTimeout, 60000);
+
+    document.getElementById("btnCambiarPin").addEventListener("click", () => showPinScreen("set"));
+
+    if (!pinSaved()){
+      showPinScreen("set");
+    } else {
+      const last = parseInt(localStorage.getItem(PIN_LAST_ACTIVE_KEY) || "0", 10);
+      if (Date.now() - last > PIN_TIMEOUT_MS){
+        showPinScreen("unlock");
+      } else {
+        pinTouchActivity();
+      }
+    }
+  }
+
+  /* ============================================================
      Arranque
      ============================================================ */
+  // El PIN se activa primero, antes que cualquier otra cosa: así, aunque algo
+  // más adelante en el arranque falle (por ejemplo un registro dañado en el
+  // dispositivo), el bloqueo ya quedó activo y no se salta por accidente.
+  initPinLock();
   buildHeaderFields();
   initStepCounter();
   initMeasureModal();
