@@ -4,6 +4,12 @@
 (function(){
   "use strict";
 
+  /* Versión de la app. Cada vez que se publique un cambio en GitHub hay que subir
+     este número Y el CACHE_NAME de sw.js -- así cada registro queda marcado con la
+     versión con la que se capturó, y los celulares con una versión vieja reciben
+     el aviso de actualización. Formato: mayor.menor.corrección */
+  const APP_VERSION = "3.1.0";
+
   const GRUPOS = window.__QAQC_GRUPOS__;                 // [{es,zh,items:[{es,zh},...],nota?}, ...]
   const MASTER_DEFAULT = window.__QAQC_MASTER_DEFAULT__;  // {PANELES:[...], ...}
   const HEADER_FIELDS = window.__QAQC_HEADER_FIELDS__;
@@ -86,21 +92,81 @@
     t = stripAccents(t).toUpperCase().replace(/[_\s]+/g," ").trim();
     return t;
   }
-  function compressImage(file, maxDim, quality){
+  // Resolución mínima aceptada para una foto de evidencia (lado más corto, en px).
+  // La app nunca amplía una foto: si llega más pequeña que esto (reenviada por
+  // WhatsApp, miniatura, captura recortada), así quedaría en el registro y el PDF,
+  // así que se rechaza y se obliga a tomarla o cargarla de nuevo.
+  const FOTO_MIN_LADO = 200;
+
+  // opts.minSide   -> rechaza (err.code = "LOWRES") si el lado más corto es menor.
+  // opts.watermark -> texto que se estampa en una franja inferior de la foto.
+  function compressImage(file, maxDim, quality, opts){
+    opts = opts || {};
     return new Promise((resolve, reject) => {
       const img = new Image();
       const reader = new FileReader();
       reader.onerror = reject;
       reader.onload = () => { img.onload = () => {
+        if (opts.minSide && Math.min(img.width, img.height) < opts.minSide){
+          const err = new Error("LOWRES");
+          err.code = "LOWRES"; err.w = img.width; err.h = img.height;
+          reject(err); return;
+        }
         let w = img.width, h = img.height;
         if (w > h && w > maxDim){ h = Math.round(h * maxDim / w); w = maxDim; }
         else if (h >= w && h > maxDim){ w = Math.round(w * maxDim / h); h = maxDim; }
         const c = document.createElement("canvas"); c.width = w; c.height = h;
-        c.getContext("2d").drawImage(img, 0, 0, w, h);
+        const ctx = c.getContext("2d");
+        ctx.drawImage(img, 0, 0, w, h);
+        if (opts.watermark) drawWatermark(ctx, w, h, opts.watermark);
         resolve(c.toDataURL("image/jpeg", quality || 0.6));
       }; img.onerror = reject; img.src = reader.result; };
       reader.readAsDataURL(file);
     });
+  }
+
+  // Marca de agua: franja semitransparente en la parte inferior con el ID del
+  // registro, la labor, el número del ítem y su nombre -- para que la foto siga
+  // siendo trazable aunque se comparta suelta, fuera del registro o del PDF.
+  function drawWatermark(ctx, w, h, text){
+    const fontSize = Math.max(12, Math.round(w * 0.026));
+    const padX = Math.round(fontSize * 0.6), padY = Math.round(fontSize * 0.45);
+    const barH = fontSize + padY * 2;
+    ctx.fillStyle = "rgba(0,0,0,0.6)";
+    ctx.fillRect(0, h - barH, w, barH);
+    ctx.font = "bold " + fontSize + "px Arial, sans-serif";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = "#FFFFFF";
+    // Si el texto no cabe, se recorta con "…" en vez de comprimir las letras.
+    let t = String(text), maxW = w - padX * 2;
+    if (ctx.measureText(t).width > maxW){
+      while (t.length > 1 && ctx.measureText(t + "…").width > maxW) t = t.slice(0, -1);
+      t += "…";
+    }
+    ctx.fillText(t, padX, h - barH / 2);
+  }
+
+  function evidenceWatermark(state){
+    const labor = (headerState.labor || "").trim();
+    return [headerState.id, labor, "#" + (state.gi + 1) + "." + state.idx + " " + state.es]
+      .filter(Boolean).join(" | ");
+  }
+
+  // Alarma bloqueante (pantalla completa) con botón para cerrarla.
+  function showBlockingAlert(titleHtml, bodyHtml, onClose){
+    const prev = document.getElementById("qaqcBlockingAlert");
+    if (prev) prev.remove();
+    const ov = document.createElement("div");
+    ov.id = "qaqcBlockingAlert";
+    ov.setAttribute("role", "alertdialog");
+    ov.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,0.88);z-index:10000;display:flex;align-items:center;justify-content:center;padding:20px;box-sizing:border-box";
+    ov.innerHTML = '<div style="background:var(--surface,#1A2733);color:var(--ink,#E8ECEF);border:2px solid var(--bad,#E74C3C);border-radius:12px;padding:18px 20px;width:100%;max-width:440px;max-height:85vh;overflow:auto">'
+      + '<div style="color:var(--bad-ink,#FFB3A7);font-size:16px;font-weight:700;margin-bottom:10px">' + titleHtml + '</div>'
+      + bodyHtml
+      + '<button type="button" data-role="close" style="margin-top:14px;width:100%;padding:12px;border:0;border-radius:8px;background:var(--accent,#F2701D);color:var(--accent-ink,#2A1200);font-weight:700;font-size:15px">Entendido / 明白</button>'
+      + '</div>';
+    document.body.appendChild(ov);
+    ov.querySelector('[data-role="close"]').addEventListener("click", () => { ov.remove(); if (onClose) onClose(); });
   }
 
   /* ============================================================
@@ -525,6 +591,10 @@
           if (state.status === "Cumple") row.classList.add("answered-ok");
           if (state.status === "No Cumple") row.classList.add("answered-bad");
           if (state.status === "N/A") row.classList.add("answered-na");
+          const obsEl = row.querySelector('[data-role="obs"]');
+          obsEl.placeholder = state.status === "No Cumple"
+            ? "Observación obligatoria / 必填备注"
+            : "Observaciones / 备注 (opcional)";
           updateGroupProgress(row.closest(".group"));
         });
       });
@@ -567,7 +637,8 @@
       [camIn, galIn].forEach(inp => inp.addEventListener("change", async () => {
         if (!inp.files || !inp.files[0]) return;
         try {
-          const dataUrl = await compressImage(inp.files[0], 900, 0.62);
+          const dataUrl = await compressImage(inp.files[0], 900, 0.62,
+            {minSide: FOTO_MIN_LADO, watermark: evidenceWatermark(state)});
           state.photo = dataUrl;
           renderThumb(row, state);
           // Al tomar/adjuntar la evidencia -- el momento en que el inspector
@@ -583,7 +654,16 @@
           measureRow.hidden = false;
           updateMeasureRowUI(row, state);
           toast("Evidencia adjuntada / 已附加证据");
-        } catch(e){ toast("No se pudo procesar la imagen"); }
+        } catch(e){
+          if (e && e.code === "LOWRES"){
+            showBlockingAlert("⚠ FOTO NO VÁLIDA / 照片无效",
+              '<div style="font-size:13px;margin-bottom:8px">Ítem ' + (state.gi + 1) + '.' + state.idx + ': ' + esc(state.es) + '</div>'
+              + '<div style="font-size:13px;margin-bottom:6px">La foto es muy pequeña (' + e.w + '×' + e.h + ' px) y no sirve como evidencia. <b>Debes tomarla o cargarla de nuevo.</b> No uses fotos reenviadas por WhatsApp ni capturas de pantalla.</div>'
+              + '<div style="font-size:12px;color:var(--ink-soft,#93A2AD)">照片太小（' + e.w + '×' + e.h + ' 像素），不能作为证据。<b>请重新拍摄或上传。</b>不要使用微信/WhatsApp转发的照片或截图。</div>');
+          } else {
+            toast("No se pudo procesar la imagen / 无法处理图片");
+          }
+        }
         inp.value = "";
       }));
     });
@@ -959,7 +1039,8 @@
       groups,
       totals: {total: itemState.length, answered: answered.length, cumple, noCumple, na, pct},
       signatures: Object.assign({}, sigState),
-      capturedAt: nowStamp()
+      capturedAt: nowStamp(),
+      appVersion: APP_VERSION
     };
   }
 
@@ -1006,6 +1087,7 @@
             <span><b>Fase:</b> ${esc(h.fase||"—")}</span>
             <span><b>Inspector:</b> ${esc(h.inspector||"—")}</span>
             <span><b>Ítems:</b> ${rec.totals.cumple} cumple / ${rec.totals.noCumple} no cumple / ${rec.totals.na} n/a</span>
+            <span><b>App:</b> ${rec.appVersion ? "v" + esc(rec.appVersion) : '<span class="pill na">anterior a v3.1 / 旧版本</span>'}</span>
           </div>
         </div>
       </div>
@@ -1047,6 +1129,33 @@
 
   document.getElementById("btnSubmit").addEventListener("click", () => {
     const warn = document.getElementById("submitWarn");
+    // Todo "No cumple" debe llevar observación y evidencia fotográfica:
+    // si falta alguna de las dos, NO se guarda el registro.
+    const ncSinObs  = itemState.filter(s => s.status === "No Cumple" && !(s.obs || "").trim());
+    const ncSinFoto = itemState.filter(s => s.status === "No Cumple" && !s.photo);
+    if (ncSinObs.length || ncSinFoto.length){
+      const lista = (arr) => arr.slice(0, 8).map(s =>
+        '<div style="font-size:12px;padding:2px 0">• ' + (s.gi + 1) + '.' + s.idx + ' — ' + esc(s.es) + '</div>').join("")
+        + (arr.length > 8 ? '<div style="font-size:12px;color:var(--ink-soft,#93A2AD)">… y ' + (arr.length - 8) + ' más / 还有 ' + (arr.length - 8) + ' 项</div>' : "");
+      let body = "";
+      if (ncSinFoto.length){
+        body += '<div style="font-size:13px;font-weight:700;margin:6px 0 4px">📷 Sin evidencia fotográfica / 缺少照片证据 (' + ncSinFoto.length + ')</div>' + lista(ncSinFoto);
+      }
+      if (ncSinObs.length){
+        body += '<div style="font-size:13px;font-weight:700;margin:10px 0 4px">✏️ Sin observación / 缺少备注 (' + ncSinObs.length + ')</div>' + lista(ncSinObs);
+      }
+      body = '<div style="font-size:13px;margin-bottom:6px">Todo ítem marcado <b>No cumple</b> debe tener foto y observación. Complétalos para poder guardar.</div>'
+        + '<div style="font-size:12px;color:var(--ink-soft,#93A2AD);margin-bottom:6px">所有“不符合”项必须附有照片和备注，补全后才能保存。</div>' + body;
+      const primero = (ncSinFoto[0] && ncSinObs[0])
+        ? ((ncSinFoto[0].gi * 1000 + ncSinFoto[0].idx) <= (ncSinObs[0].gi * 1000 + ncSinObs[0].idx) ? ncSinFoto[0] : ncSinObs[0])
+        : (ncSinFoto[0] || ncSinObs[0]);
+      showBlockingAlert("⚠ NO CUMPLE INCOMPLETO / 不符合项不完整", body, () => {
+        const row = document.querySelector('.item-row[data-uid="' + primero.uid + '"]');
+        if (row) row.scrollIntoView({behavior: "smooth", block: "center"});
+      });
+      return;
+    }
+
     const unanswered = itemState.filter(s => !s.status).length;
     if (unanswered > 0 && !confirm(`${unanswered} ítem(s) sin diligenciar. ¿Enviar de todas formas? / 还有 ${unanswered} 项未填写，仍要提交吗？`)) return;
 
@@ -1325,7 +1434,7 @@
         });
       });
     }
-    const header = meta.concat(itemCols);
+    const header = meta.concat(itemCols).concat(["Version app"]);
     const rows = [header];
     recs.forEach(rec => {
       const h = rec.header;
@@ -1333,6 +1442,7 @@
                    h.fase||"", h.codigoEquipo||"", h.inspector||"", h.supervisor||"", h.operadorEquipo||"", h.actividad||"",
                    rec.totals.pct==null?"":rec.totals.pct, rec.totals.cumple, rec.totals.noCumple, rec.totals.na, rec.capturedAt||""];
       rec.groups.forEach(g => g.items.forEach(it => { row.push(it.status||""); row.push(it.obs||""); }));
+      row.push(rec.appVersion || "anterior a 3.1");
       rows.push(row);
     });
     return rows;
@@ -1341,7 +1451,7 @@
   function buildHallazgosRows(recs){
     const header = ["ID Hallazgo","ID Registro","Fecha","Labor (panel)","Turno","Guardia","Inspector",
                      "Grupo","Estandar (No Cumple)","标准 (不符合)","Observacion","Foto","Estado cierre",
-                     "Pasos desde ingreso","Distancia estimada (m)","Medida en foto (cm)","Que se midio"];
+                     "Pasos desde ingreso","Distancia estimada (m)","Medida en foto (cm)","Que se midio","Version app"];
     const rows = [header];
     let seq = 0;
     const hallazgosConFoto = [];
@@ -1355,7 +1465,8 @@
                        rec.header.guardia||"", rec.header.inspector||"", g.es, it.es, it.zh, it.obs||"",
                        it.photo ? "FOTO_ADJUNTA" : "Sin foto", "PENDIENTE",
                        it.steps || "", it.distanceM == null ? "" : it.distanceM,
-                       it.measureCm == null ? "" : it.measureCm, it.measureLabel || ""]);
+                       it.measureCm == null ? "" : it.measureCm, it.measureLabel || "",
+                       rec.appVersion || "anterior a 3.1"]);
             if (it.photo) hallazgosConFoto.push({ncId, foto: it.photo, rowIdx: rows.length-1});
           }
         });
@@ -1724,7 +1835,7 @@
       doc.setPage(p);
       setEs(7.4, "normal"); doc.setTextColor(160,167,173);
       doc.text(`Página ${p} / ${pageCount}`, PW-M, PH-8, {align:"right"});
-      doc.text(`QAQC Paneles · Generado ${nowStamp()}`, M, PH-8);
+      doc.text(`QAQC Paneles · Capturado con app v${rec.appVersion || "anterior a 3.1"} · Generado ${nowStamp()}`, M, PH-8);
     }
 
     return doc;
@@ -2291,4 +2402,52 @@
   updateMaestroBadges();
   renderMaestroPreview();
   renderArchive();
+
+  /* ============================================================
+     Versión visible y aviso de actualización.
+     - Muestra "App vX.Y.Z" en el encabezado para que el inspector (o quien
+       lo revise en campo) vea de un vistazo qué versión tiene.
+     - Busca una versión nueva al abrir la app, al recuperar señal y cada
+       30 minutos. Cuando el service worker nuevo toma el control, aparece una
+       franja fija "Nueva versión disponible" con un botón para actualizar.
+     - Si hay un formulario a medio llenar, pide confirmación antes de
+       recargar (recargar borra lo que no se haya enviado).
+     ============================================================ */
+  (function versionAndUpdates(){
+    const sub = document.querySelector(".brand .sub");
+    if (sub && sub.textContent.indexOf("App v") === -1) sub.textContent += " · App v" + APP_VERSION;
+
+    if (!("serviceWorker" in navigator)) return;
+    const hadController = !!navigator.serviceWorker.controller;
+
+    function formHasData(){
+      if (itemState.some(s => s.status || (s.obs || "").trim() || s.photo)) return true;
+      return Object.keys(sigState).some(k => sigState[k] && sigState[k].dataUrl);
+    }
+    function showUpdateBanner(){
+      if (document.getElementById("qaqcUpdateBanner")) return;
+      const bar = document.createElement("div");
+      bar.id = "qaqcUpdateBanner";
+      bar.setAttribute("role", "status");
+      bar.style.cssText = "position:fixed;left:0;right:0;bottom:0;z-index:9999;background:var(--accent,#F2701D);color:var(--accent-ink,#2A1200);padding:10px 14px calc(10px + env(safe-area-inset-bottom,0px));display:flex;gap:10px;align-items:center;justify-content:space-between;font-size:13px;font-weight:600;box-shadow:0 -4px 14px rgba(0,0,0,.35)";
+      bar.innerHTML = '<span>Nueva versión de la app disponible<br><span style="font-weight:500">新版本可用，请更新</span></span>'
+        + '<button type="button" style="flex:none;border:0;border-radius:8px;padding:10px 14px;background:var(--paper,#0F1923);color:#fff;font-weight:700">Actualizar / 更新</button>';
+      bar.querySelector("button").addEventListener("click", () => {
+        if (formHasData() && !confirm("Tienes un formulario sin enviar. Si actualizas ahora se perderá. ¿Actualizar de todas formas?\n\n有未提交的表单，现在更新会丢失。仍要更新吗？")) return;
+        location.reload();
+      });
+      document.body.appendChild(bar);
+    }
+
+    navigator.serviceWorker.addEventListener("controllerchange", () => {
+      // En la primera instalación no hay versión anterior: no se avisa nada.
+      if (hadController) showUpdateBanner();
+    });
+    navigator.serviceWorker.ready.then(reg => {
+      const check = () => { if (navigator.onLine) reg.update().catch(() => {}); };
+      check();
+      window.addEventListener("online", check);
+      setInterval(check, 30 * 60 * 1000);
+    }).catch(() => {});
+  })();
 })();
