@@ -1,83 +1,85 @@
-// Service Worker — Inspeccion de Labores v3.2
-// Optimizado para iOS Safari y Android Chrome
+/* Service worker — QAQC Paneles
+   Cachea el "app shell" para que el formulario abra y funcione sin conexión
+   en el celular/tablet del inspector después de la primera visita.
+   Sube CACHE_NAME cada vez que cambies index.html/manifest/iconos para forzar
+   que los dispositivos ya instalados recojan la versión nueva. */
 
-var CACHE_NAME = "inspeccion-labores-v3.9";
-var APP_SHELL = [
-  "/inspeccion-labores/",
-  "/inspeccion-labores/index.html",
-  "/inspeccion-labores/manifest.json"
+const CACHE_NAME = "qaqc-paneles-v16";
+
+const APP_SHELL = [
+  "./",
+  "./index.html",
+  "./app.js",
+  "./manifest.json",
+  "./fonts/wqy-zenhei-subset.b64.js",
+  "./icons/icon-192.png",
+  "./icons/icon-512.png",
+  "./icons/icon-maskable-512.png"
 ];
 
-// Instalacion: cachear shell de la app
-self.addEventListener("install", function(e){
-  e.waitUntil(
-    caches.open(CACHE_NAME).then(function(cache){
-      return Promise.allSettled(
-        APP_SHELL.map(function(url){
-          return cache.add(url).catch(function(err){
-            console.warn("No se pudo cachear:", url, err);
-          });
+self.addEventListener("install", (event) => {
+  event.waitUntil(
+    caches.open(CACHE_NAME)
+      .then((cache) => cache.addAll(APP_SHELL))
+      .then(() => self.skipWaiting())
+  );
+});
+
+self.addEventListener("activate", (event) => {
+  event.waitUntil(
+    caches.keys().then((names) =>
+      Promise.all(names.filter((n) => n !== CACHE_NAME).map((n) => caches.delete(n)))
+    ).then(() => self.clients.claim())
+  );
+});
+
+self.addEventListener("fetch", (event) => {
+  const req = event.request;
+  if (req.method !== "GET") return;
+
+  // SheetJS (cdnjs) y otras librerías externas de terceros: dejar pasar sin interceptar,
+  // para no interferir con la carga diferida de la exportación/importación de Excel.
+  if (req.url.indexOf("cdnjs.cloudflare.com") !== -1) return;
+
+  // Navegación (abrir/recargar la app): red primero, si falla usa la copia en caché.
+  if (req.mode === "navigate") {
+    event.respondWith(
+      fetch(req)
+        .then((res) => {
+          caches.open(CACHE_NAME).then((cache) => cache.put("./index.html", res.clone()));
+          return res;
         })
-      );
-    }).then(function(){
-      return self.skipWaiting();
-    })
-  );
-});
-
-// Activacion: limpiar caches viejos y tomar control inmediato
-self.addEventListener("activate", function(e){
-  e.waitUntil(
-    caches.keys().then(function(names){
-      return Promise.all(
-        names.filter(function(n){ return n !== CACHE_NAME; })
-             .map(function(n){ return caches.delete(n); })
-      );
-    }).then(function(){
-      return self.clients.claim();
-    })
-  );
-});
-
-// Fetch: estrategia Network First para la app, cache fallback offline
-self.addEventListener("fetch", function(e){
-  var url = e.request.url;
-
-  // NUNCA interceptar peticiones a Google o CDNs externos
-  if(url.indexOf("google") !== -1 ||
-     url.indexOf("googleapis") !== -1 ||
-     url.indexOf("cloudflare") !== -1 ||
-     url.indexOf("github.com") !== -1 ||
-     e.request.method !== "GET"){
+        .catch(() => caches.match("./index.html"))
+    );
     return;
   }
 
-  // Para la app local: Network First con fallback a cache
-  e.respondWith(
-    fetch(e.request).then(function(response){
-      // Si la respuesta es buena, actualizamos el cache
-      if(response && response.status === 200 && response.type === "basic"){
-        var responseClone = response.clone();
-        caches.open(CACHE_NAME).then(function(cache){
-          cache.put(e.request, responseClone);
-        });
-      }
-      return response;
-    }).catch(function(){
-      // Sin red: servir desde cache
-      return caches.match(e.request).then(function(cached){
-        if(cached) return cached;
-        // Fallback a index.html para rutas de la app
-        return caches.match("/inspeccion-labores/") ||
-               caches.match("/inspeccion-labores/index.html");
-      });
-    })
-  );
-});
+  const url = new URL(req.url);
 
-// Mensaje para forzar actualizacion desde la app
-self.addEventListener("message", function(e){
-  if(e.data && e.data.action === "skipWaiting"){
-    self.skipWaiting();
+  if (url.origin === self.location.origin) {
+    // Mismo origen (app shell, iconos): caché primero, red como respaldo y actualización.
+    event.respondWith(
+      caches.match(req).then((cached) => {
+        const network = fetch(req)
+          .then((res) => {
+            caches.open(CACHE_NAME).then((cache) => cache.put(req, res.clone()));
+            return res;
+          })
+          .catch(() => cached);
+        return cached || network;
+      })
+    );
+  } else {
+    // Origen externo (Google Fonts): red primero; si no hay conexión, usa lo cacheado
+    // de una visita anterior. Si nunca se cacheó, la tipografía cae a la del sistema
+    // (definida en el CSS), así que no bloquea la app.
+    event.respondWith(
+      fetch(req)
+        .then((res) => {
+          caches.open(CACHE_NAME).then((cache) => cache.put(req, res.clone()));
+          return res;
+        })
+        .catch(() => caches.match(req))
+    );
   }
 });
