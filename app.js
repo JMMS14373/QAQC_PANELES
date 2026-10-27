@@ -8,7 +8,7 @@
      este número Y el CACHE_NAME de sw.js -- así cada registro queda marcado con la
      versión con la que se capturó, y los celulares con una versión vieja reciben
      el aviso de actualización. Formato: mayor.menor.corrección */
-  const APP_VERSION = "3.1.0";
+  const APP_VERSION = "3.3.0";
 
   const GRUPOS = window.__QAQC_GRUPOS__;                 // [{es,zh,items:[{es,zh},...],nota?}, ...]
   const MASTER_DEFAULT = window.__QAQC_MASTER_DEFAULT__;  // {PANELES:[...], ...}
@@ -208,6 +208,164 @@
   }
   let ACTIVIDAD_FASE = loadActividadFase();
 
+  /* ============================================================
+     v3.3 · Ciclos productivos y semanas (igual que la app de Inspección v4.5)
+     El Maestro trae tblCiclos (Mes_Productivo, Anio, Mes_Num, Inicio_Ciclo,
+     Fin_Ciclo) y tblConfig (Meses_Atras, Actualizado_Por, Fecha_Actualizacion).
+     Nada va fijo en el código: con cada Maestro nuevo la app recalcula
+       - el mes productivo y las semanas del ciclo de la fecha del registro, y
+       - qué paneles de tblFronts se muestran (Active = TRUE y Month dentro de
+         los últimos "Meses_Atras" meses productivos, contando el vigente).
+     Sin tblCiclos se usa la regla 26 -> 25 (enero: 1 a 25; diciembre: 26-nov a 31-dic).
+     ============================================================ */
+  const MESES_EN = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+  const MESES_ABR = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
+  function soloFecha(d){ return new Date(d.getFullYear(), d.getMonth(), d.getDate()); }
+  function sumaDias(d, n){ const x = new Date(d); x.setDate(x.getDate() + n); return soloFecha(x); }
+  function isoDe(d){ return d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0") + "-" + String(d.getDate()).padStart(2,"0"); }
+  function deIso(s){ const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(s||"")); return m ? new Date(+m[1], +m[2]-1, +m[3]) : null; }
+  function fmtCorta(d){ return String(d.getDate()).padStart(2,"0") + " " + MESES_ABR[d.getMonth()]; }
+  function fmtFechaDMY(d){ return String(d.getDate()).padStart(2,"0") + "/" + String(d.getMonth()+1).padStart(2,"0") + "/" + d.getFullYear(); }
+  // Fecha tal como llega de SheetJS: número de serie de Excel, Date o texto (aaaa-mm-dd / dd/mm/aaaa).
+  function fechaMaestro(v){
+    if (v == null || v === "") return null;
+    if (v instanceof Date) return isNaN(v) ? null : soloFecha(v);
+    if (typeof v === "number"){ const d = new Date(Date.UTC(1899,11,30) + Math.round(v)*86400000); return new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()); }
+    const t = String(v).trim(); let m;
+    if ((m = /^(\d{4})-(\d{1,2})-(\d{1,2})/.exec(t))) return new Date(+m[1], +m[2]-1, +m[3]);
+    if ((m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})/.exec(t))) return new Date(+m[3], +m[2]-1, +m[1]);
+    return null;
+  }
+  function loadCiclos(){
+    try {
+      const saved = JSON.parse(localStorage.getItem("qaqc_maestro_ciclos") || "null");
+      if (saved && saved.length) return saved.map(c => ({mes:c.mes, mesNum:c.mesNum, anio:c.anio, ini:deIso(c.ini), fin:deIso(c.fin)})).filter(c => c.ini && c.fin);
+    } catch(e){}
+    return [];
+  }
+  function loadCicloCfg(){
+    try {
+      const saved = JSON.parse(localStorage.getItem("qaqc_maestro_config") || "null");
+      if (saved) return {mesesAtras: saved.mesesAtras || 3, actualizadoPor: saved.actualizadoPor || "", fechaAct: deIso(saved.fechaAct)};
+    } catch(e){}
+    return {mesesAtras:3, actualizadoPor:"", fechaAct:null};
+  }
+  let CICLOS = loadCiclos();
+  let CICLO_CFG = loadCicloCfg();
+
+  // Lee tblCiclos / tblConfig por encabezado (sin posiciones fijas) de la hoja ya convertida a filas.
+  function leerCiclosMaestro(rows){
+    const head = (rows && rows[0]) || [], col = {};
+    head.forEach((h, i) => { const k = h == null ? "" : String(h).toLowerCase().trim(); if (k && col[k] == null) col[k] = i; });
+    const ciclos = [];
+    if (col["inicio_ciclo"] != null && col["fin_ciclo"] != null && col["mes_productivo"] != null){
+      for (let r=1; r<rows.length; r++){
+        const row = rows[r]; if (!row) continue;
+        const ini = fechaMaestro(row[col["inicio_ciclo"]]), fin = fechaMaestro(row[col["fin_ciclo"]]);
+        const mes = row[col["mes_productivo"]];
+        if (!ini || !fin || !mes) continue;
+        ciclos.push({mes:String(mes).trim(), ini, fin, mesNum:fin.getMonth()+1, anio:fin.getFullYear()});
+      }
+      ciclos.sort((a,b) => a.ini - b.ini);
+    }
+    const cfg = {mesesAtras:3, actualizadoPor:"", fechaAct:null};
+    if (col["meses_atras"] != null && rows[1]){ const n = parseInt(rows[1][col["meses_atras"]], 10); if (n > 0 && n < 13) cfg.mesesAtras = n; }
+    if (col["actualizado_por"] != null && rows[1] && rows[1][col["actualizado_por"]]) cfg.actualizadoPor = String(rows[1][col["actualizado_por"]]).trim();
+    if (col["fecha_actualizacion"] != null && rows[1]) cfg.fechaAct = fechaMaestro(rows[1][col["fecha_actualizacion"]]);
+    return {ciclos, cfg};
+  }
+  function guardarCiclos(ciclos, cfg){
+    localStorage.setItem("qaqc_maestro_ciclos", JSON.stringify(ciclos.map(c => ({mes:c.mes, mesNum:c.mesNum, anio:c.anio, ini:isoDe(c.ini), fin:isoDe(c.fin)}))));
+    localStorage.setItem("qaqc_maestro_config", JSON.stringify({mesesAtras:cfg.mesesAtras, actualizadoPor:cfg.actualizadoPor, fechaAct: cfg.fechaAct ? isoDe(cfg.fechaAct) : ""}));
+  }
+
+  // Ciclo productivo de una fecha. vencido = el Maestro trae ciclos pero ninguno cubre la fecha.
+  function cicloDeFecha(fecha){
+    const f = soloFecha(fecha);
+    for (let i=0; i<CICLOS.length; i++){
+      if (f >= CICLOS[i].ini && f <= CICLOS[i].fin) return {ciclo:CICLOS[i], vencido:false};
+    }
+    const y = f.getFullYear(), m = f.getMonth()+1, d = f.getDate();
+    let mp, ini, fin;
+    if (m === 1 && d <= 25){ mp = 1; ini = new Date(y,0,1); fin = new Date(y,0,25); }
+    else if ((m === 11 && d >= 26) || m === 12){ mp = 12; ini = new Date(y,10,26); fin = new Date(y,11,31); }
+    else if (d >= 26){ mp = m + 1; ini = new Date(y, m-1, 26); fin = new Date(y, m, 25); }
+    else { mp = m; ini = new Date(y, m-2, 26); fin = new Date(y, m-1, 25); }
+    return {ciclo:{mes:MESES_EN[mp-1], mesNum:mp, anio:fin.getFullYear(), ini, fin}, vencido: CICLOS.length > 0};
+  }
+
+  // Semanas dom-sáb. Parcial inicial de 4 días o menos se une a la siguiente; parcial final de
+  // 4 días o menos se une a la anterior; de 5-6 días queda como semana corta (misma regla que el
+  // calendario tblCalendar del Maestro y que la app de Inspección).
+  function semanasDelCiclo(ini, fin){
+    const bl = []; let s = ini;
+    while (s <= fin){
+      let e = sumaDias(s, (6 - s.getDay() + 7) % 7);
+      if (e > fin) e = fin;
+      bl.push([s, e]); s = sumaDias(e, 1);
+    }
+    if (bl.length > 1){
+      const l0 = Math.round((bl[0][1]-bl[0][0])/86400000)+1;
+      if (l0 <= 4 && bl[0][0].getDay() !== 0){ bl[1][0] = bl[0][0]; bl.shift(); }
+    }
+    if (bl.length > 1){
+      const last = bl[bl.length-1], ll = Math.round((last[1]-last[0])/86400000)+1;
+      if (ll <= 4 && last[1].getDay() !== 6){ bl[bl.length-2][1] = last[1]; bl.pop(); }
+    }
+    return bl;
+  }
+
+  // Meses productivos (en inglés, como la columna Month de tblFronts) que se muestran: el vigente y los anteriores.
+  function mesesVentana(){
+    const info = cicloDeFecha(new Date()), n = CICLO_CFG.mesesAtras || 3, out = [];
+    for (let k=0; k<n; k++) out.push(MESES_EN[((info.ciclo.mesNum-1-k)%12+12)%12]);
+    return out;
+  }
+
+  // Paneles a mostrar a partir de las filas de tblFronts guardadas: Active = TRUE y Month dentro de la
+  // ventana de meses. Si ninguno cae en la ventana (Maestro sin actualizar o meses escritos distinto),
+  // se muestran todos los activos, como antes, y se avisa.
+  function panelesDesdeFrentes(frentes){
+    const ventana = mesesVentana().map(m => m.toLowerCase());
+    const activos = frentes.filter(f => f.active);
+    const conMes = activos.some(f => f.month);
+    let lista = conMes ? activos.filter(f => ventana.includes(String(f.month).toLowerCase())) : activos;
+    const fueraDeVentana = conMes && !lista.length && activos.length > 0;
+    if (fueraDeVentana) lista = activos;
+    // el mes más reciente de la ventana manda para Fase/Tipo si un panel aparece en varios meses
+    const rank = m => { const i = ventana.indexOf(String(m||"").toLowerCase()); return i === -1 ? 99 : i; };
+    lista = lista.slice().sort((a,b) => rank(b.month) - rank(a.month));
+    const seen = new Set(), PANELES = [], tipo = {}, fase = {};
+    lista.forEach(f => {
+      if (!seen.has(f.name)){ seen.add(f.name); }
+      if (/_ST_/i.test(f.name)) tipo[f.name] = "STOPE";
+      else if (/_UP_/i.test(f.name)) tipo[f.name] = "UPPER";
+      else if (/stope/i.test(f.type||"")) tipo[f.name] = "STOPE";
+      else if (/upper/i.test(f.type||"")) tipo[f.name] = "UPPER";
+      if (f.fase) fase[f.name] = f.fase;
+    });
+    // orden de aparición original (vigente primero ya resuelto arriba para tipo/fase)
+    frentes.forEach(f => { if (seen.has(f.name) && !PANELES.includes(f.name)) PANELES.push(f.name); });
+    return {PANELES, tipo, fase, ventana: mesesVentana(), fueraDeVentana};
+  }
+  function loadFrentes(){
+    try { const s = JSON.parse(localStorage.getItem("qaqc_maestro_frentes") || "null"); return Array.isArray(s) ? s : null; } catch(e){ return null; }
+  }
+  // Al abrir la app (y al cargar un Maestro) se recalcula la lista de paneles según la fecha de hoy,
+  // así el cambio de mes productivo se refleja solo, sin tener que volver a cargar el Maestro.
+  let CICLO_PANELES_INFO = null;
+  function aplicarCicloAPaneles(){
+    const frentes = loadFrentes();
+    if (!frentes || !frentes.length){ CICLO_PANELES_INFO = null; return; }
+    const res = panelesDesdeFrentes(frentes);
+    if (res.PANELES.length){
+      MASTER.PANELES = res.PANELES;
+      PANEL_DERIVE = {tipo: Object.assign({}, res.tipo), fase: Object.assign({}, res.fase)};
+    }
+    CICLO_PANELES_INFO = res;
+  }
+  aplicarCicloAPaneles();
+
   function updateMaestroBadges(){
     const meta = getMaestroMeta();
     const pillEl = document.getElementById("maestroPillText");
@@ -241,15 +399,62 @@
      Render: campos de encabezado
      ============================================================ */
   const headerState = {};
+
+  // v3.3: llena "Semana" con las semanas del ciclo de la fecha del registro, preselecciona la que
+  // contiene esa fecha, y escribe el "Mes productivo". Debajo muestra el ciclo y quién actualizó el Maestro.
+  function refreshSemana(){
+    const sel = document.querySelector('#headerFields [data-key="semana"]');
+    const mpEl = document.querySelector('#headerFields [data-key="mesProductivo"]');
+    const inf = document.getElementById("cicloInfo");
+    const f = deIso(headerState.fecha) || soloFecha(new Date());
+    const info = cicloDeFecha(f), semanas = semanasDelCiclo(info.ciclo.ini, info.ciclo.fin);
+    if (sel){
+      sel.innerHTML = semanas.map((b, i) => `<option value="${i+1}">Semana ${i+1} (${fmtCorta(b[0])} - ${fmtCorta(b[1])})</option>`).join("");
+      const idx = semanas.findIndex(b => f >= b[0] && f <= b[1]);
+      sel.value = String(idx === -1 ? 1 : idx + 1);
+      headerState.semana = sel.value;
+    }
+    const mp = info.ciclo.anio + "-" + String(info.ciclo.mesNum).padStart(2,"0") + " " + info.ciclo.mes;
+    if (mpEl){ mpEl.value = mp; }
+    headerState.mesProductivo = mp;
+    if (inf){
+      let txt = "Ciclo " + info.ciclo.mes + " " + info.ciclo.anio + ": " + fmtFechaDMY(info.ciclo.ini) + " a " + fmtFechaDMY(info.ciclo.fin);
+      if (CICLO_CFG.actualizadoPor || CICLO_CFG.fechaAct){
+        txt += " · Maestro actualizado" + (CICLO_CFG.actualizadoPor ? " por " + CICLO_CFG.actualizadoPor : "") + (CICLO_CFG.fechaAct ? " el " + fmtFechaDMY(CICLO_CFG.fechaAct) : "");
+      }
+      if (CICLO_PANELES_INFO){
+        txt += " · Paneles de: " + CICLO_PANELES_INFO.ventana.join(", ");
+      }
+      inf.style.color = "";
+      if (info.vencido){
+        txt += " · ⚠ El Maestro no trae el ciclo de esta fecha: cargue el Maestro actualizado / 主数据表缺少此日期的周期";
+        inf.style.color = "var(--bad-ink, #c0392b)";
+      } else if (CICLO_PANELES_INFO && CICLO_PANELES_INFO.fueraDeVentana){
+        txt += " · ⚠ Ningún panel activo es del mes vigente: se muestran todos los activos. Actualice tblFronts / 没有当前月份的面板";
+        inf.style.color = "var(--bad-ink, #c0392b)";
+      }
+      inf.textContent = txt;
+    }
+  }
+
   function buildHeaderFields(){
     const wrap = document.getElementById("headerFields");
     wrap.innerHTML = HEADER_FIELDS.map(f => {
       let control;
       if (f.type === "select"){
         const opts = (MASTER[f.list]||[]).map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join("");
-        control = `<select data-key="${f.key}">${opts}</select>`;
+        // v3.2: opciones fijas adicionales (p.ej. "No aplica (NA)" / "No definido" para
+        // Operador y Código de equipo), siempre disponibles aunque el maestro no las traiga.
+        const extra = (f.extraOptions||[]).filter(v => !(MASTER[f.list]||[]).includes(v))
+          .map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join("");
+        control = `<select data-key="${f.key}">${opts}${extra}</select>`;
       } else if (f.type === "date"){
         control = `<input type="date" data-key="${f.key}" value="${businessDateISO()}">`;
+      } else if (f.type === "week"){
+        // v3.3: semanas del ciclo productivo de la fecha elegida (ver refreshSemana)
+        control = `<select data-key="${f.key}"></select>`;
+      } else if (f.type === "readonly"){
+        control = `<input type="text" data-key="${f.key}" readonly tabindex="-1" style="opacity:.85">`;
       } else if (f.type === "text_list"){
         const listId = "dl_" + f.key;
         const opts = (MASTER[f.list]||[]).map(v => `<option value="${esc(v)}">`).join("");
@@ -259,7 +464,8 @@
         control = `<input type="text" data-key="${f.key}" placeholder="${esc(f.placeholder||"")}">`;
       }
       return `<div class="field"><label>${esc(f.es)}<span class="zh">${esc(f.zh)}</span></label>${control}</div>`;
-    }).join("") + `<div class="field"><label>ID Registro<span class="zh">记录ID</span></label><div class="readonly-val" id="idRegistroVal"></div></div>`;
+    }).join("") + `<div class="field"><label>ID Registro<span class="zh">记录ID</span></label><div class="readonly-val" id="idRegistroVal"></div></div>`
+      + `<div id="cicloInfo" style="grid-column:1/-1;font-size:11px;color:var(--ink-soft);margin-top:-4px"></div>`;
 
     wrap.querySelectorAll("[data-key]").forEach(el => {
       headerState[el.dataset.key] = el.value;
@@ -267,6 +473,13 @@
     });
     headerState.id = genId();
     document.getElementById("idRegistroVal").textContent = headerState.id;
+
+    // v3.3: Semana y Mes productivo según la fecha (se recalculan al cambiar la fecha)
+    const fechaEl = wrap.querySelector('[data-key="fecha"]');
+    if (fechaEl) fechaEl.addEventListener("change", refreshSemana);
+    const semanaEl = wrap.querySelector('[data-key="semana"]');
+    if (semanaEl) semanaEl.addEventListener("change", () => { headerState.semana = semanaEl.value; });
+    refreshSemana();
 
     // Actividad filtrada por Fase: si el maestro cargado trae las listas de Preparación y
     // Producción separadas (ver tryParseRealMaestro -> actividadPorFase), el campo Actividad
@@ -285,8 +498,28 @@
 
     const faseEl = wrap.querySelector('[data-key="fase"]');
     if (faseEl){
-      faseEl.addEventListener("change", () => { headerState.fase = faseEl.value; refreshActividadOptions(); });
+      faseEl.addEventListener("change", () => { headerState.fase = faseEl.value; refreshActividadOptions(); refreshSubfase(); });
     }
+
+    // v3.2: Subfase (p.ej. Recuperación) -- solo se habilita cuando la Fase es Preparación.
+    // En cualquier otra fase queda fija en "N/A". Al elegir Recuperación se bloquean en N/A
+    // los grupos que no aplican (ver applySubfaseLock).
+    const subfaseEl = wrap.querySelector('[data-key="subfase"]');
+    function refreshSubfase(){
+      if (!subfaseEl) return;
+      const esPrep = /preparaci/i.test(stripAccents(headerState.fase || ""));
+      if (!esPrep){
+        const naOpt = [...subfaseEl.options].find(o => !/recuperaci/i.test(stripAccents(o.value)));
+        if (naOpt) subfaseEl.value = naOpt.value;
+        headerState.subfase = subfaseEl.value;
+      }
+      subfaseEl.disabled = !esPrep;
+      applySubfaseLock();
+    }
+    if (subfaseEl){
+      subfaseEl.addEventListener("change", () => { headerState.subfase = subfaseEl.value; applySubfaseLock(); });
+    }
+    refreshSubfase();
 
     // Al elegir la Labor/Panel, autocompletar Categoría de explotación y Fase si el maestro
     // trae esa relación (deriva de la columna Name / Category del Maestro_Paneles real).
@@ -302,7 +535,14 @@
         }
         if (fase){
           const el = wrap.querySelector('[data-key="fase"]');
-          if (el && [...el.options].some(o => o.value === fase)){ el.value = fase; headerState.fase = fase; refreshActividadOptions(); }
+          if (el && [...el.options].some(o => o.value === fase)){ el.value = fase; headerState.fase = fase; refreshActividadOptions(); refreshSubfase(); }
+          // v3.2: si el maestro marca el panel como Recuperación, es Preparación + Subfase Recuperación
+          else if (el && /recuperaci/i.test(stripAccents(fase))){
+            const prep = [...el.options].find(o => /preparaci/i.test(stripAccents(o.value)));
+            if (prep){ el.value = prep.value; headerState.fase = prep.value; refreshActividadOptions(); refreshSubfase(); }
+            const rec = subfaseEl && [...subfaseEl.options].find(o => /recuperaci/i.test(stripAccents(o.value)));
+            if (rec){ subfaseEl.value = rec.value; headerState.subfase = rec.value; applySubfaseLock(); }
+          }
         }
       });
     }
@@ -584,6 +824,7 @@
 
       row.querySelectorAll(".status-btn").forEach(btn => {
         btn.addEventListener("click", () => {
+          if (state.locked) return; // v3.2: grupo en N/A automático (Subfase Recuperación)
           const val = btn.dataset.val;
           state.status = (state.status === val) ? "" : val;
           row.querySelectorAll(".status-btn").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.val === state.status)));
@@ -915,6 +1156,65 @@
     });
   }
 
+  /* ============================================================
+     v3.2 · Subfase Recuperación (dentro de Preparación)
+     Solo se diligencian los grupos de Ventilación/Servicios auxiliares,
+     Eléctricos (energía) y Sostenimiento; los demás quedan en N/A
+     automático y bloqueados. Si se cambia la subfase o la fase, los
+     grupos se desbloquean y recuperan el estado que tenían antes.
+     ============================================================ */
+  const RECUP_GRUPOS_HABILITADOS = [/VENTILACI/i, /SERVICIOS/i, /ELECTRIC/i, /ENERG/i, /SOSTENIMIENTO/i];
+  function isRecuperacion(){
+    return /preparaci/i.test(stripAccents(headerState.fase || "")) && /recuperaci/i.test(stripAccents(headerState.subfase || ""));
+  }
+  function grupoHabilitadoEnRecuperacion(g){
+    const n = stripAccents(g.es || "");
+    return RECUP_GRUPOS_HABILITADOS.some(r => r.test(n));
+  }
+  function paintStatus(row, state){
+    row.querySelectorAll(".status-btn").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.val === state.status)));
+    row.classList.remove("answered-ok","answered-bad","answered-na");
+    if (state.status === "Cumple") row.classList.add("answered-ok");
+    if (state.status === "No Cumple") row.classList.add("answered-bad");
+    if (state.status === "N/A") row.classList.add("answered-na");
+  }
+  function applySubfaseLock(){
+    const container = document.getElementById("groupsContainer");
+    if (!container) return;
+    const recup = isRecuperacion();
+    container.querySelectorAll(".group").forEach(groupEl => {
+      const g = GRUPOS[+groupEl.dataset.gi];
+      if (!g) return;
+      const lock = recup && !grupoHabilitadoEnRecuperacion(g);
+      groupEl.classList.toggle("group-locked", lock);
+      let note = groupEl.querySelector(".group-lock-note");
+      if (lock && !note){
+        note = document.createElement("div");
+        note.className = "group-lock-note";
+        note.innerHTML = 'Subfase Recuperación: este grupo no aplica — N/A automático<span class="zh">回采子阶段：此检查组不适用 — 自动填写N/A</span>';
+        groupEl.querySelector(".group-head").insertAdjacentElement("afterend", note);
+      } else if (!lock && note){
+        note.remove();
+      }
+      groupEl.querySelectorAll(".item-row").forEach(row => {
+        const state = itemState.find(x => x.uid === row.dataset.uid);
+        if (!state) return;
+        if (lock && !state.locked){
+          state.prevStatus = state.status;
+          state.status = "N/A";
+          state.locked = true;
+        } else if (!lock && state.locked){
+          state.status = state.prevStatus || "";
+          state.prevStatus = "";
+          state.locked = false;
+        }
+        row.querySelectorAll("button, textarea, input").forEach(el => { el.disabled = !!state.locked; });
+        paintStatus(row, state);
+      });
+      updateGroupProgress(groupEl);
+    });
+  }
+
   function updateGroupProgress(groupEl){
     const gi = groupEl.dataset.gi;
     const rows = groupEl.querySelectorAll(".item-row");
@@ -931,7 +1231,7 @@
     const wrap = document.getElementById("sigGrid");
     wrap.innerHTML = SIGNERS.map(s => `
       <div class="sig-card" data-signer="${s.key}">
-        <h4>${esc(s.es)}</h4><div class="zh">${esc(s.zh)}</div>
+        <h4>${esc(s.es)}${s.optional ? ' <span class="sig-optional">(opcional / 可选)</span>' : ""}</h4><div class="zh">${esc(s.zh)}</div>
         <div class="sig-name" data-role="signame">—</div>
         <div class="sig-pad-wrap"><canvas class="sig-pad"></canvas></div>
         <div class="sig-actions">
@@ -1061,13 +1361,17 @@
       }).join("");
       return `<div class="detail-group"><h5>${esc(g.es)} <span style="color:var(--ink-soft);font-weight:400">${esc(g.zh)}</span></h5>${rows}</div>`;
     }).join("");
-    const pendingSigners = SIGNERS.filter(s => !(rec.signatures[s.key] && rec.signatures[s.key].dataUrl));
+    // v3.2: la firma del operador es opcional -- no cuenta como "pendiente" ni vence,
+    // pero si la ventana del turno sigue abierta se puede agregar desde "Completar firmas".
+    const unsignedSigners = SIGNERS.filter(s => !(rec.signatures[s.key] && rec.signatures[s.key].dataUrl));
+    const pendingSigners = unsignedSigners.filter(s => !s.optional);
     const sigWindowOpen = canCompleteSignatures(rec);
     const sigStrip = SIGNERS.map(s => {
       const sd = rec.signatures[s.key] || {};
       const img = sd.dataUrl ? `<img src="${sd.dataUrl}">`
         : `<div style="width:120px;height:44px;background:var(--surface-2);border:1px solid var(--border-soft);border-radius:6px"></div>`;
-      return `<div class="sigmini">${img}<div>${esc(s.es)}${sd.name ? " — " + esc(sd.name) : ""}${sd.ts ? " · " + esc(sd.ts) : ""}</div></div>`;
+      const optTxt = (!sd.dataUrl && s.optional) ? " · opcional / 可选" : "";
+      return `<div class="sigmini">${img}<div>${esc(s.es)}${sd.name ? " — " + esc(sd.name) : ""}${sd.ts ? " · " + esc(sd.ts) : ""}${optTxt}</div></div>`;
     }).join("");
 
     return `<div class="record-card" data-record-id="${esc(rec.id)}">
@@ -1084,7 +1388,8 @@
             <span><b>Fecha:</b> ${esc(h.fecha||"—")}</span>
             <span><b>Turno:</b> ${esc(h.turno||"—")}</span>
             <span><b>Guardia:</b> ${esc(h.guardia||"—")}</span>
-            <span><b>Fase:</b> ${esc(h.fase||"—")}</span>
+            ${h.semana ? `<span><b>Semana:</b> ${esc(h.semana)} · ${esc(h.mesProductivo||"")}</span>` : ""}
+            <span><b>Fase:</b> ${esc(h.fase||"—")}${h.subfase && /recuperaci/i.test(stripAccents(h.subfase)) ? " · " + esc(h.subfase) : ""}</span>
             <span><b>Inspector:</b> ${esc(h.inspector||"—")}</span>
             <span><b>Ítems:</b> ${rec.totals.cumple} cumple / ${rec.totals.noCumple} no cumple / ${rec.totals.na} n/a</span>
             <span><b>App:</b> ${rec.appVersion ? "v" + esc(rec.appVersion) : '<span class="pill na">anterior a v3.1 / 旧版本</span>'}</span>
@@ -1096,9 +1401,9 @@
         <div class="sig-strip">${sigStrip}</div>
         <div class="record-actions">
           <button type="button" class="btn btn-primary btn-sm" data-act="export-pdf" data-id="${esc(rec.id)}">Descargar PDF <span style="opacity:.8;font-weight:500">/ 下载PDF</span></button>
-          ${pendingSigners.length ? (sigWindowOpen
-            ? `<button type="button" class="btn btn-ghost btn-sm" data-act="complete-sig" data-id="${esc(rec.id)}">Completar firmas (${pendingSigners.length}) <span style="opacity:.8;font-weight:500">/ 补签(${pendingSigners.length})</span></button>`
-            : `<button type="button" class="btn btn-ghost btn-sm" disabled title="El turno de este registro ya terminó / 该记录所属班次已结束">Firma vencida (${pendingSigners.length}) <span style="opacity:.8;font-weight:500">/ 签名已过期</span></button>`
+          ${unsignedSigners.length ? (sigWindowOpen
+            ? `<button type="button" class="btn btn-ghost btn-sm" data-act="complete-sig" data-id="${esc(rec.id)}">Completar firmas (${unsignedSigners.length}) <span style="opacity:.8;font-weight:500">/ 补签(${unsignedSigners.length})</span></button>`
+            : (pendingSigners.length ? `<button type="button" class="btn btn-ghost btn-sm" disabled title="El turno de este registro ya terminó / 该记录所属班次已结束">Firma vencida (${pendingSigners.length}) <span style="opacity:.8;font-weight:500">/ 签名已过期</span></button>` : "")
           ) : ""}
           <button type="button" class="btn btn-ghost btn-sm" data-act="export-xlsx" data-id="${esc(rec.id)}">Descargar Excel</button>
           <button type="button" class="btn btn-ghost btn-sm" data-act="export-csv" data-id="${esc(rec.id)}">CSV</button>
@@ -1117,6 +1422,7 @@
     const permNote = document.getElementById("stepCounterPermNote");
     if (permNote){ permNote.hidden = true; permNote.classList.remove("perm-warn"); }
     buildGroups();
+    applySubfaseLock(); // v3.2: conservar el N/A automático si sigue elegida la Subfase Recuperación
     SIGNERS.forEach(s => sigState[s.key] = {name:"", dataUrl:"", ts:""});
     buildSignatures();
     headerState.id = genId();
@@ -1164,7 +1470,16 @@
     const recs = getRecords();
     recs.unshift(rec);
     setRecords(recs);
-    toast("Registro guardado en el archivo / 记录已保存");
+    // v3.2: la firma del supervisor/líder puede completarse después, dentro del turno (día/noche).
+    const supPend = SIGNERS.filter(s => !s.optional && !(rec.signatures[s.key] && rec.signatures[s.key].dataUrl));
+    const win = shiftWindowForRecord(rec.header);
+    if (supPend.length && win){
+      const hasta = win.end.getFullYear() + "-" + String(win.end.getMonth()+1).padStart(2,"0") + "-" + String(win.end.getDate()).padStart(2,"0")
+        + " " + String(win.end.getHours()).padStart(2,"0") + ":" + String(win.end.getMinutes()).padStart(2,"0");
+      toast("Registro guardado. " + supPend.map(s => s.es).join(", ") + " pendiente(s): complétala(s) en Archivo hasta " + hasta + " / 记录已保存，请在 " + hasta + " 前补签", 6000);
+    } else {
+      toast("Registro guardado en el archivo / 记录已保存");
+    }
     resetForm();
     renderArchive();
     setLocalTab("archivo");
@@ -1195,7 +1510,7 @@
     const body = document.getElementById("sigModalBody");
     body.innerHTML = pending.map(s => `
       <div class="sig-card" data-signer="${esc(s.key)}">
-        <h4>${esc(s.es)}</h4><div class="zh">${esc(s.zh)}</div>
+        <h4>${esc(s.es)}${s.optional ? ' <span class="sig-optional">(opcional / 可选)</span>' : ""}</h4><div class="zh">${esc(s.zh)}</div>
         <div class="sig-name">${esc(rec.header[s.nameField] || "—")}</div>
         <div class="sig-pad-wrap"><canvas class="sig-pad"></canvas></div>
         <div class="sig-actions">
@@ -1434,7 +1749,7 @@
         });
       });
     }
-    const header = meta.concat(itemCols).concat(["Version app"]);
+    const header = meta.concat(itemCols).concat(["Version app", "Subfase", "Mes productivo", "Semana ciclo"]);
     const rows = [header];
     recs.forEach(rec => {
       const h = rec.header;
@@ -1443,6 +1758,8 @@
                    rec.totals.pct==null?"":rec.totals.pct, rec.totals.cumple, rec.totals.noCumple, rec.totals.na, rec.capturedAt||""];
       rec.groups.forEach(g => g.items.forEach(it => { row.push(it.status||""); row.push(it.obs||""); }));
       row.push(rec.appVersion || "anterior a 3.1");
+      row.push(h.subfase || "");
+      row.push(h.mesProductivo || ""); row.push(h.semana || "");   // v3.3
       rows.push(row);
     });
     return rows;
@@ -1820,7 +2137,7 @@
         try{ doc.addImage(sd.dataUrl, "PNG", x+3, y+11, sigW-6, 13.5); } catch(e){}
       } else {
         setEs(8); doc.setTextColor(190,195,199);
-        doc.text("Sin firmar / 未签名", x+3, y+20);
+        doc.text(s.optional ? "No firmado (opcional)" : "Sin firmar / 未签名", x+3, y+20);
       }
       setEs(7.4, "normal"); doc.setTextColor(90,100,110);
       const ownerLines = doc.splitTextToSize(sd.name || "—", sigW-6);
@@ -1977,6 +2294,10 @@
     localStorage.removeItem("qaqc_maestro_meta");
     localStorage.removeItem("qaqc_maestro_derive");
     localStorage.removeItem("qaqc_maestro_actividad_fase");
+    localStorage.removeItem("qaqc_maestro_ciclos");   // v3.3
+    localStorage.removeItem("qaqc_maestro_config");   // v3.3
+    localStorage.removeItem("qaqc_maestro_frentes");  // v3.3
+    CICLOS = loadCiclos(); CICLO_CFG = loadCicloCfg(); CICLO_PANELES_INFO = null;
     MASTER = loadMaster();
     PANEL_DERIVE = loadPanelDerive();
     ACTIVIDAD_FASE = loadActividadFase();
@@ -2032,6 +2353,12 @@
     const idxCodigo = findColIndex(headerRow, ["Codigo","Código","Machine Codigo","Machine Código"]);
     const idxOperator = findColIndex(headerRow, ["Operator name","Operator"]);
     const idxRange = findColIndex(headerRow, ["Range"]);
+    // v3.3: la hoja tiene dos columnas "Month" (la del calendario y la de tblFronts) y dos "Contractor";
+    // la de tblFronts es la última "Month" que está a la izquierda de "Name".
+    let idxMonth = -1;
+    for (let i=0; i<idxName; i++){ if (headerRow[i] === "MONTH") idxMonth = i; }
+    let idxType = -1;
+    for (let i=idxName+1; i<headerRow.length; i++){ if (headerRow[i] === "TYPE"){ idxType = i; break; } }
 
     function cleanVal(v){ return v == null ? "" : String(v).replace(/ /g," ").replace(/\s+/g," ").trim(); }
 
@@ -2062,6 +2389,7 @@
     function normFase(v){
       if (/preparaci/i.test(v)) return "Preparación / 准备";
       if (/producci/i.test(v)) return "Producción / 生产";
+      if (/recuperaci/i.test(v)) return "Recuperación / 回采"; // v3.2: subfase de Preparación
       return v;
     }
     function isActiveVal(v){
@@ -2082,6 +2410,22 @@
       else if (/_UP_/i.test(name)) tipo[name] = "UPPER";
       const cat = cleanVal(rows[r][idxCategory]);
       if (cat) fase[name] = normFase(cat);
+    }
+
+    // v3.3: todas las filas de tblFronts (activas o no), para recalcular la lista de paneles
+    // según el mes productivo vigente cada vez que se abre la app.
+    const frentes = [];
+    for (let r=1;r<rows.length;r++){
+      const name = cleanVal(rows[r][idxName]);
+      if (!name) continue;
+      const cat = cleanVal(rows[r][idxCategory]);
+      frentes.push({
+        name,
+        month: idxMonth !== -1 ? cleanVal(rows[r][idxMonth]) : "",
+        active: idxActive === -1 ? true : isActiveVal(rows[r][idxActive]),
+        fase: cat ? normFase(cat) : "",
+        type: idxType !== -1 ? cleanVal(rows[r][idxType]) : ""
+      });
     }
 
     // Actividades: si el maestro trae las dos listas separadas (Preparación/Producción),
@@ -2120,7 +2464,7 @@
     };
     const found = Object.keys(master).filter(k => (master[k]||[]).length);
     if (!found.length) return null;
-    return {master, found, tipo, fase, actividadPorFase};
+    return {master, found, tipo, fase, actividadPorFase, frentes};
   }
 
   async function importMaestroFile(file){
@@ -2187,6 +2531,10 @@
       mode = "plantilla";
     }
 
+    // v3.3: ciclos productivos y configuración (tblCiclos / tblConfig), en cualquier formato de Maestro
+    const cic = leerCiclosMaestro(rows);
+    if (cic.ciclos.length){ CICLOS = cic.ciclos; CICLO_CFG = cic.cfg; guardarCiclos(cic.ciclos, cic.cfg); }
+
     localStorage.setItem("qaqc_maestro", JSON.stringify(newMaster));
     localStorage.setItem("qaqc_maestro_meta", JSON.stringify({filename:name, updatedAt:new Date().toISOString(), columnsFound:found, mode}));
     if (mode === "real"){
@@ -2207,11 +2555,22 @@
       ACTIVIDAD_FASE = null;
     }
     MASTER = newMaster;
+    // v3.3: paneles según el mes productivo vigente (Active + Month de tblFronts)
+    if (mode === "real" && real.frentes && real.frentes.some(f => f.month)){
+      localStorage.setItem("qaqc_maestro_frentes", JSON.stringify(real.frentes));
+    } else {
+      localStorage.removeItem("qaqc_maestro_frentes");
+    }
+    aplicarCicloAPaneles();
 
     buildHeaderFields();
     syncSignerNames();
     updateMaestroBadges();
     renderMaestroPreview();
+    if (cic.ciclos.length){
+      const ult = cic.ciclos[cic.ciclos.length-1];
+      setTimeout(() => toast(`Ciclos cargados hasta ${ult.mes} ${ult.anio}` + (CICLO_PANELES_INFO ? ` · ${MASTER.PANELES.length} panel(es) de ${CICLO_PANELES_INFO.ventana.join(", ")}` : "") + " / 周期已加载", 4500), 4600);
+    }
 
     const notFound = (mode === "real" ? Object.keys(newMaster) : MAESTRO_COLUMNS.map(c=>c.key)).filter(k => !found.includes(k));
     if (mode === "real"){
@@ -2266,6 +2625,10 @@
     localStorage.removeItem("qaqc_maestro_actividad_fase");
     localStorage.removeItem(PIN_KEY);
     localStorage.removeItem(PIN_LAST_ACTIVE_KEY);
+    localStorage.removeItem("qaqc_maestro_ciclos");   // v3.3
+    localStorage.removeItem("qaqc_maestro_config");   // v3.3
+    localStorage.removeItem("qaqc_maestro_frentes");  // v3.3
+    CICLOS = loadCiclos(); CICLO_CFG = loadCicloCfg(); CICLO_PANELES_INFO = null;
     MASTER = loadMaster();
     PANEL_DERIVE = loadPanelDerive();
     ACTIVIDAD_FASE = loadActividadFase();
