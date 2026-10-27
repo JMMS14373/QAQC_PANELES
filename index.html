@@ -209,6 +209,25 @@
   .step-counter-debug[hidden]{ display:none; }
   .step-counter-debug #stepDebugVal, .step-counter-debug #stepDebugThreshold{ color:var(--accent-text); font-weight:700; }
   .step-counter-debug .zh{ display:block; margin-top:2px; opacity:.8; font-family:inherit; }
+  /* v3.4: punto de referencia, conteo dudoso, calibración por inspector y aviso flotante */
+  .step-ref{ display:flex; flex-direction:column; gap:6px; }
+  .step-ref label{ font-size:12px; font-weight:600; color:var(--ink-soft); }
+  .step-ref label .zh{ font-size:10.5px; font-weight:500; opacity:.85; margin-left:2px; }
+  .step-ref select, .step-ref input{ width:100%; }
+  .step-ref input[hidden]{ display:none; }
+  .step-counter-display .step-dudoso-badge{ font-size:11px; font-weight:700; color:var(--bad-ink); border:1px solid var(--bad); border-radius:999px; padding:3px 9px; margin-left:6px; }
+  .step-counter-display .step-dudoso-badge[hidden]{ display:none; }
+  .step-calib{ border-top:1px solid var(--border-soft); padding-top:8px; }
+  .step-calib summary{ cursor:pointer; font-size:12.5px; color:var(--accent-text); font-weight:600; }
+  .step-calib-body{ display:flex; flex-direction:column; gap:8px; margin-top:8px; font-size:12px; color:var(--ink-soft); line-height:1.5; }
+  .step-calib-body .zh{ display:block; opacity:.85; }
+  .step-calib-row{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .step-calib-row input{ width:80px; flex:none; }
+  .step-calib-row button[hidden]{ display:none; }
+  .step-calib-info{ background:var(--surface-2); border:1px solid var(--border-soft); border-radius:8px; padding:6px 10px; color:var(--ink); }
+  .step-pill{ position:fixed; right:12px; bottom:calc(14px + env(safe-area-inset-bottom,0px)); z-index:9000; background:var(--surface); color:var(--ink); border:1.5px solid var(--accent); border-radius:999px; padding:8px 14px; font-size:13px; font-weight:700; box-shadow:0 4px 14px rgba(0,0,0,.4); cursor:pointer; font-family:"IBM Plex Mono", monospace; }
+  .step-pill.pausa{ background:var(--accent); color:var(--accent-ink); }
+  .step-pill[hidden]{ display:none; }
 
   /* ---------- Signatures ---------- */
   .sig-grid{ display:grid; grid-template-columns:repeat(3,1fr); gap:14px; padding:16px; }
@@ -388,25 +407,45 @@
 
     <div class="section-title"><span>Contador de pasos (opcional)</span><span class="zh">步数计数器（可选）</span><span class="rule"></span></div>
     <div class="card step-counter-card" id="stepCounterCard">
+      <div class="step-ref">
+        <label for="stepRefSelect">Punto de referencia <span class="zh">参考点</span></label>
+        <select id="stepRefSelect"></select>
+        <input type="text" id="stepRefOtro" placeholder="Describe el punto (ej. Intersección acceso / crucero 0906) / 描述参考点" hidden>
+      </div>
       <div class="step-counter-row">
-        <button class="btn btn-primary btn-sm" id="btnStepStart" type="button">Iniciar ingreso a labor <span style="opacity:.8;font-weight:500">/ 开始进入作业面</span></button>
+        <button class="btn btn-primary btn-sm" id="btnStepStart" type="button">▶ Iniciar en el punto de referencia <span style="opacity:.8;font-weight:500">/ 从参考点开始</span></button>
         <button class="btn btn-ghost btn-sm" id="btnStepStop" type="button" hidden>Detener conteo <span style="opacity:.8;font-weight:500">/ 停止计数</span></button>
         <button class="btn btn-primary btn-sm" id="btnStepResume" type="button" hidden>▶ Reanudar conteo <span style="opacity:.8;font-weight:500">/ 继续计数</span></button>
         <div class="step-counter-display" id="stepCounterDisplay" hidden>
           <span class="step-num" id="stepCountVal">0</span><span class="step-lbl"> pasos / 步</span>
           <span class="step-dist" id="stepDistVal"></span>
           <span class="step-paused-badge" id="stepPausedBadge" hidden>⏸ Pausado / 已暂停</span>
+          <span class="step-dudoso-badge" id="stepDudosoBadge" hidden>⚠ Conteo dudoso (&gt;2 m/s) / 计数可疑</span>
         </div>
       </div>
-      <div class="step-counter-cfg">
-        <label for="stepFactorInput">Factor de calibración (m/paso) <span class="zh">校准系数（米/步）</span></label>
-        <input type="number" id="stepFactorInput" min="0.10" max="2" step="0.01" value="0.70">
-      </div>
+      <details class="step-calib" id="stepCalib">
+        <summary>Mi paso: <b id="stepFactorTxt">0.70</b> m/paso · calibrar / 校准步长</summary>
+        <div class="step-calib-body">
+          <div class="step-calib-info" id="stepCalibInfo"></div>
+          <div><b>Calibra con tu EPP completo</b> (botas, autorrescatador, arnés): camina en línea recta una distancia conocida a tu paso normal y toca Terminar al llegar. Mejor 20 m o más.
+            <span class="zh">请穿戴全套劳保用品校准：以正常步伐直线行走已知距离，到达后点击"结束"。建议20米以上。</span></div>
+          <div class="step-calib-row">
+            <input type="number" id="stepCalibMetros" min="10" max="100" step="1" value="20"> m
+            <button class="btn btn-primary btn-sm" id="btnCalibStart" type="button">Iniciar calibración / 开始校准</button>
+            <button class="btn btn-ghost btn-sm" id="btnCalibEnd" type="button" hidden>Terminar / 结束</button>
+            <span id="stepCalibCount" hidden></span>
+          </div>
+          <div class="step-counter-cfg">
+            <label for="stepFactorInput">Factor manual (m/paso) <span class="zh">手动系数（米/步）</span></label>
+            <input type="number" id="stepFactorInput" min="0.45" max="0.90" step="0.01" value="0.70">
+          </div>
+        </div>
+      </details>
       <div class="step-counter-debug" id="stepDebugRow" hidden>
         Sensibilidad del sensor -- pico reciente: <span id="stepDebugVal">0.0</span> (umbral actual: <span id="stepDebugThreshold"></span>)
         <span class="zh">传感器灵敏度 -- 最近峰值 / 当前阈值</span>
       </div>
-      <div class="step-counter-note" id="stepCounterNote">Funciona sin conexión (usa el sensor del teléfono, no internet). Presiona "Iniciar ingreso a labor" al entrar a la labor; al tocar Cámara/Galería para documentar una condición, el conteo se PAUSA automáticamente (para no sumar pasos falsos por el manejo del teléfono al detenerte) y guarda en ese ítem los pasos recorridos hasta ese punto (siempre editable). Toca "Reanudar conteo" cuando retomes la caminata. Si el sensor no está disponible en tu dispositivo, puedes escribir el número de pasos a mano.<span class="zh">离线可用（使用手机传感器，不需要网络）。进入作业面时点击"开始进入作业面"；点击相机/相册记录条件证据时，计数会自动暂停（避免因停下操作手机而多算步数），并把当时的步数记录到该项（可随时编辑）。继续行走时点击"继续计数"。如果设备没有该传感器，也可以手动输入步数。</span></div>
+      <div class="step-counter-note" id="stepCounterNote">Funciona sin conexión (usa el sensor del teléfono, no internet). Elige el punto de referencia y presiona "Iniciar en el punto de referencia" parado en él; al tocar Cámara/Galería para documentar una condición, el conteo se PAUSA automáticamente (para no sumar pasos falsos por el manejo del teléfono al detenerte) y guarda en ese ítem los pasos recorridos hasta ese punto (siempre editable). Toca "Reanudar conteo" cuando retomes la caminata. Si el sensor no está disponible en tu dispositivo, puedes escribir el número de pasos a mano.<span class="zh">离线可用（使用手机传感器，不需要网络）。选择参考点，站在该点时点击"从参考点开始"；点击相机/相册记录条件证据时，计数会自动暂停（避免因停下操作手机而多算步数），并把当时的步数记录到该项（可随时编辑）。继续行走时点击"继续计数"。如果设备没有该传感器，也可以手动输入步数。</span></div>
       <div class="step-counter-note" id="stepCounterPermNote" hidden></div>
     </div>
 

@@ -8,7 +8,7 @@
      este número Y el CACHE_NAME de sw.js -- así cada registro queda marcado con la
      versión con la que se capturó, y los celulares con una versión vieja reciben
      el aviso de actualización. Formato: mayor.menor.corrección */
-  const APP_VERSION = "3.3.0";
+  const APP_VERSION = "3.4.0";
 
   const GRUPOS = window.__QAQC_GRUPOS__;                 // [{es,zh,items:[{es,zh},...],nota?}, ...]
   const MASTER_DEFAULT = window.__QAQC_MASTER_DEFAULT__;  // {PANELES:[...], ...}
@@ -583,10 +583,71 @@
   let stepDebugMaxDelta = 0;         // mayor "mag - baseline" visto en la ventana reciente (para el indicador en pantalla)
   let stepDebugTimer = null;         // intervalo que refresca el indicador de sensibilidad en pantalla
 
+  /* v3.4 -- Mejoras traídas del contador de Inspección de Labores (v4.1):
+     - Punto de referencia elegible: la distancia se mide desde un lugar identificable.
+     - Detector medido en TIEMPO (no en número de lecturas): igual en teléfonos de 60 o 200 lecturas/seg.
+     - Velocidad > 2 m/s => conteo marcado como dudoso (vibración de equipos o carrera).
+     - Factor m/paso POR INSPECTOR, calibrado caminando una distancia conocida con EPP y
+       validado con rangos normales de marcha (largo de paso y cadencia).
+     - Aviso flotante con el conteo (y la pausa) visible en todo el formulario.
+     La lista de puntos de referencia se edita aquí abajo (puntosReferencia). */
+  const PASOS_CFG = {
+    umbral: STEP_PEAK_THRESHOLD,  // m/s2 sobre la línea base para considerar un pico
+    intervaloMinMs: 400,          // tiempo mínimo entre pasos (tope 150 pasos/min)
+    confirmacionMs: 30,           // el pico debe sostenerse este tiempo para contar
+    constanteBaseMs: 300,         // rapidez con que la línea base sigue la gravedad/postura
+    velocidadMax: 2.0,            // m/s: por encima, el conteo se marca como dudoso
+    rangoFactor: [0.45, 0.90],    // largo de paso aceptable (m)
+    rangoCadencia: [70, 140],     // pasos/min aceptables al calibrar
+    factorDefecto: 0.70,          // respaldo si el inspector no ha calibrado
+    puntosReferencia: [
+      "Ingreso al panel / acceso",
+      "Intersección más cercana",
+      "Última estación topográfica",
+      "Caja eléctrica / nicho"
+    ]
+  };
+  let stepMode = null;               // null | "conteo" | "calibracion"
+  let stepPrevT = null;              // tiempo de la lectura anterior (línea base en tiempo)
+  let stepOverSince = null;          // desde cuándo la señal está sobre el umbral (confirmación)
+  let stepRecentTimes = [];          // tiempos de los últimos pasos (para la velocidad)
+  let stepVelAlerts = 0;             // veces que el conteo superó la velocidad máxima
+  let stepDudosoNow = false;         // velocidad actual por encima de la máxima
+  let stepCalib = null;              // {pasos, t0, t1} durante la calibración
+
+  function stepNow(){ return (window.performance && performance.now) ? performance.now() : Date.now(); }
+  function stepInspector(){ return (headerState.inspector || "").trim(); }
+  function stepProfiles(){ try{ return JSON.parse(localStorage.getItem("qaqc_step_profiles") || "{}"); }catch(e){ return {}; } }
+  function stepProfile(){ const i = stepInspector(); return i ? (stepProfiles()[i] || null) : null; }
+  function saveStepProfile(dato){
+    const i = stepInspector(); if (!i) return;
+    const all = stepProfiles(); all[i] = dato;
+    try{ localStorage.setItem("qaqc_step_profiles", JSON.stringify(all)); }catch(e){}
+  }
+  // Factor y de dónde sale: calibración/manual del inspector, o el factor del dispositivo como respaldo.
+  function stepFactorInfo(){
+    const p = stepProfile();
+    if (p && p.f) return {f: p.f, origen: p.origen === "manual" ? "manual del inspector" : "calibrado por el inspector"};
+    const saved = parseFloat(localStorage.getItem("qaqc_step_factor"));
+    if (!isNaN(saved) && saved > 0) return {f: saved, origen: "factor del dispositivo (sin calibrar)"};
+    return {f: PASOS_CFG.factorDefecto, origen: "respaldo (sin calibrar)"};
+  }
+  function stepRefActual(){
+    const sel = document.getElementById("stepRefSelect");
+    if (!sel) return "";
+    if (sel.value === "__otro"){
+      const t = (document.getElementById("stepRefOtro").value || "").trim();
+      return t || "Punto de referencia";
+    }
+    return sel.value;
+  }
+  function refreshAllItemDistances(){
+    document.querySelectorAll('.item-row').forEach(row => row.dispatchEvent(new CustomEvent("qaqc:refreshdist")));
+  }
+
   function getCalibrationFactor(){
-    const el = document.getElementById("stepFactorInput");
-    const v = el ? parseFloat(el.value) : NaN;
-    return (!isNaN(v) && v > 0) ? v : 0.7;
+    // v3.4: el factor es del INSPECTOR (su calibración); si no ha calibrado, se usa el del dispositivo.
+    return stepFactorInfo().f;
   }
 
   function fmtDist(steps){
@@ -619,6 +680,54 @@
     const paused = stepCounterActive && stepSetupOK && !stepListening;
     resumeBtn.hidden = !paused;
     pausedBadge.hidden = !paused;
+    // v3.4
+    const calibrando = stepMode === "calibracion";
+    const startBtn = document.getElementById("btnStepStart");
+    startBtn.hidden = stepCounterActive || calibrando;
+    // Solo se redibuja si cambia: redibujarlo durante un toque hace que ese toque se pierda.
+    const startMode = stepCount > 0 ? "nuevo" : "inicio";
+    if (startBtn.dataset.mode !== startMode){
+      startBtn.dataset.mode = startMode;
+      startBtn.innerHTML = startMode === "nuevo"
+        ? '↺ Nuevo conteo desde otro punto <span style="opacity:.8;font-weight:500">/ 从新参考点重新计数</span>'
+        : '▶ Iniciar en el punto de referencia <span style="opacity:.8;font-weight:500">/ 从参考点开始</span>';
+    }
+    const dud = document.getElementById("stepDudosoBadge");
+    if (dud) dud.hidden = !stepDudosoNow;
+    const fi = stepFactorInfo();
+    const ft = document.getElementById("stepFactorTxt");
+    if (ft) ft.textContent = fi.f.toFixed(2);
+    const fin = document.getElementById("stepFactorInput");
+    if (fin && document.activeElement !== fin) fin.value = fi.f.toFixed(2);
+    const info = document.getElementById("stepCalibInfo");
+    if (info){
+      const insp = stepInspector(), p = stepProfile();
+      info.innerHTML = !insp ? "Selecciona el inspector para ver y calibrar su paso. <span class=\"zh\">请先选择检查员。</span>"
+        : esc(insp.split(" ")[0]) + ": <b>" + fi.f.toFixed(2) + " m/paso</b> — " + esc(fi.origen)
+          + (p && p.fecha ? " (" + new Date(p.fecha).toLocaleDateString("es-CO") + (p.cadencia ? ", " + p.cadencia + " pasos/min" : "") + ")" : "");
+    }
+    document.getElementById("btnCalibStart").hidden = calibrando || stepCounterActive;
+    document.getElementById("btnCalibEnd").hidden = !calibrando;
+    const cc = document.getElementById("stepCalibCount");
+    cc.hidden = !calibrando;
+    if (calibrando) cc.textContent = stepCalib.pasos + " pasos…";
+    // Aviso flotante: visible en todo el formulario mientras se cuenta o está en pausa
+    let pill = document.getElementById("stepPill");
+    if (!pill){
+      pill = document.createElement("div");
+      pill.id = "stepPill"; pill.className = "step-pill";
+      pill.addEventListener("click", () => {
+        if (stepCounterActive && stepSetupOK && !stepListening) resumeStepCounter();
+        else document.getElementById("stepCounterCard").scrollIntoView({behavior:"smooth", block:"center"});
+      });
+      document.body.appendChild(pill);
+    }
+    const enNuevo = document.body.getAttribute("data-local-tab") === "nuevo";
+    pill.hidden = !(stepCounterActive || calibrando) || !enNuevo;
+    pill.classList.toggle("pausa", paused);
+    pill.textContent = paused ? "📍 EN PAUSA · toca para reanudar / 暂停·点击继续"
+      : calibrando ? "📍 " + stepCalib.pasos + " pasos (calibrando)"
+      : "📍 " + stepCount + " pasos ≈ " + fmtDist(stepCount) + " m" + (stepDudosoNow ? " ⚠" : "");
   }
 
   // Detección de pasos a partir del acelerómetro: magnitud del vector de
@@ -634,43 +743,121 @@
   // contar el paso (no solo una) -- esto filtra picos de una sola muestra
   // causados por ruido/vibración puntual, que de otra forma se contaban
   // como pasos aunque el teléfono estuviera quieto.
+  // v3.4: detector medido en TIEMPO (igual que Inspección v4.1). Un paso cuenta cuando la
+  // aceleración sube sobre la línea base más que el umbral y se SOSTIENE al menos
+  // confirmacionMs; no se cuenta otro hasta que la señal baje (histéresis) y pase
+  // intervaloMinMs desde el paso anterior. La línea base sigue lento a la gravedad/postura
+  // y no se mueve mientras la señal está sobre el umbral (así el propio pico no la arrastra).
   function handleDeviceMotion(ev){
     const a = ev.accelerationIncludingGravity || ev.acceleration;
     if (!a || a.x == null) return;
     stepSensorOK = true;
     const mag = Math.sqrt((a.x||0)**2 + (a.y||0)**2 + (a.z||0)**2);
-    if (stepBaseline == null) stepBaseline = mag;
-    const now = Date.now();
-    // Para el indicador de sensibilidad en pantalla: guarda el mayor "mag - baseline" visto,
-    // independientemente de si llegó a contarse como paso o no (se lee y resetea aparte, ver
-    // updateStepDebugDisplay). Se usa Math.abs porque un frenazo/bajada también puede dar un
-    // delta negativo grande, útil para calibrar igual.
-    const deltaNow = Math.abs(mag - stepBaseline);
-    if (deltaNow > stepDebugMaxDelta) stepDebugMaxDelta = deltaNow;
-    if (!stepInPeak){
-      stepBaseline = stepBaseline*(1-STEP_BASELINE_ALPHA) + mag*STEP_BASELINE_ALPHA;
-      const over = (mag - stepBaseline) > STEP_PEAK_THRESHOLD;
-      if (over && (now - stepLastTs) > STEP_MIN_INTERVAL_MS){
-        if (stepPendingConfirm){
-          // 2a muestra seguida por encima del umbral: confirma el paso
-          stepInPeak = true;
-          stepPendingConfirm = false;
-          stepLastTs = now;
-          stepCount++;
-          updateStepCounterUI();
-        } else {
-          stepPendingConfirm = true; // 1a muestra sobre el umbral -- esperar confirmación
+    const t = stepNow();
+    const c = PASOS_CFG;
+    if (stepBaseline == null){ stepBaseline = mag; stepPrevT = t; return; }
+    const dt = Math.max(0, t - stepPrevT); stepPrevT = t;
+    const delta = mag - stepBaseline;
+    if (Math.abs(delta) > stepDebugMaxDelta) stepDebugMaxDelta = Math.abs(delta);
+    if (stepInPeak){
+      if (delta < c.umbral * 0.4) stepInPeak = false;
+      return;
+    }
+    if (delta <= c.umbral) stepBaseline += (1 - Math.exp(-dt / c.constanteBaseMs)) * (mag - stepBaseline);
+    if ((mag - stepBaseline) > c.umbral){
+      if (stepOverSince == null) stepOverSince = t;
+      if (t - stepOverSince >= c.confirmacionMs){
+        stepInPeak = true; stepOverSince = null;
+        if (t - stepLastTs > c.intervaloMinMs){
+          stepLastTs = t;
+          onStepDetected(t);
         }
-      } else if (!over){
-        stepPendingConfirm = false; // se perdió antes de confirmar: probablemente ruido, no un paso
+        // pico dentro del intervalo mínimo: 2º golpe del mismo paso -> se consume sin contar
       }
-    } else if (mag - stepBaseline < STEP_PEAK_THRESHOLD*0.4){
-      stepInPeak = false;
+    } else {
+      stepOverSince = null;
     }
   }
 
+  function onStepDetected(t){
+    if (stepMode === "calibracion" && stepCalib){
+      if (stepCalib.pasos === 0) stepCalib.t0 = t;
+      stepCalib.pasos++; stepCalib.t1 = t;
+      updateStepCounterUI();
+      return;
+    }
+    stepCount++;
+    // Velocidad sobre los últimos pasos: > velocidadMax => conteo dudoso
+    stepRecentTimes.push(t); if (stepRecentTimes.length > 8) stepRecentTimes.shift();
+    if (stepRecentTimes.length >= 6){
+      const seg = (stepRecentTimes[stepRecentTimes.length-1] - stepRecentTimes[0]) / 1000;
+      const v = seg > 0 ? ((stepRecentTimes.length - 1) * getCalibrationFactor()) / seg : 99;
+      const dudoso = v > PASOS_CFG.velocidadMax;
+      if (dudoso && !stepDudosoNow) stepVelAlerts++;
+      stepDudosoNow = dudoso;
+    }
+    updateStepCounterUI();
+  }
+
+  // Pide el permiso del sensor (iOS lo exige desde un toque). Devuelve true si se puede usar.
+  async function stepRequestSensor(noteEl){
+    if (typeof DeviceMotionEvent === "undefined") return false;
+    if (typeof DeviceMotionEvent.requestPermission === "function"){
+      try{ return (await DeviceMotionEvent.requestPermission()) === "granted"; }catch(e){ return false; }
+    }
+    return true;
+  }
+
+  // ── Calibración por inspector (distancia conocida, con EPP) ──
+  async function calibStart(){
+    if (stepCounterActive){ toast("Detén el conteo antes de calibrar / 请先停止计数"); return; }
+    if (!stepInspector()){ toast("Selecciona primero el inspector / 请先选择检查员"); return; }
+    const m = parseFloat(document.getElementById("stepCalibMetros").value);
+    if (!(m >= 10)){ toast("Indica la distancia conocida (mínimo 10 m) / 至少10米"); return; }
+    if (!(await stepRequestSensor())){ toast("El sensor no está disponible: usa el factor manual / 传感器不可用"); return; }
+    stepBaseline = null; stepInPeak = false; stepOverSince = null; stepLastTs = -1e9;
+    stepCalib = {pasos: 0, t0: null, t1: null};
+    stepMode = "calibracion";
+    window.addEventListener("devicemotion", handleDeviceMotion);
+    updateStepCounterUI();
+    toast("Camina " + m + " m a tu paso normal y toca Terminar al llegar / 行走" + m + "米后点击结束");
+  }
+  function calibEnd(){
+    window.removeEventListener("devicemotion", handleDeviceMotion);
+    const c = stepCalib || {pasos: 0}; stepCalib = null; stepMode = null;
+    const cfg = PASOS_CFG;
+    const m = parseFloat(document.getElementById("stepCalibMetros").value);
+    const p = c.pasos;
+    updateStepCounterUI();
+    if (p < 8){ toast("Solo se contaron " + p + " pasos. Repite con el teléfono en la mano o en el bolsillo del pecho."); return; }
+    const f = Math.round(m / p * 100) / 100;
+    const cad = (c.t1 > c.t0) ? Math.round((p - 1) / ((c.t1 - c.t0) / 60000)) : 0;
+    if (f < cfg.rangoFactor[0] || f > cfg.rangoFactor[1]){
+      toast("Paso de " + f + " m fuera de lo normal (" + cfg.rangoFactor.join("–") + " m). " +
+            (f < cfg.rangoFactor[0] ? "Se contaron pasos de más (vibración)." : "Se perdieron pasos.") + " Repite.");
+      return;
+    }
+    if (cad && (cad < cfg.rangoCadencia[0] || cad > cfg.rangoCadencia[1])){
+      toast("Cadencia de " + cad + " pasos/min fuera de lo normal (" + cfg.rangoCadencia.join("–") + "). Repite a ritmo normal.");
+      return;
+    }
+    saveStepProfile({f, fecha: new Date().toISOString(), metros: m, pasos: p, cadencia: cad, origen: "calibración"});
+    refreshAllItemDistances();
+    updateStepCounterUI();
+    toast("Calibrado: " + p + " pasos en " + m + " m → " + f + " m/paso ✓ / 校准完成");
+  }
+
   async function startStepCounter(){
-    stepCount = 0; stepBaseline = null; stepInPeak = false; stepPendingConfirm = false; stepLastTs = 0; stepSensorOK = false;
+    if (stepMode === "calibracion"){ toast("Termina primero la calibración / 请先完成校准"); return; }
+    if (!stepInspector()){
+      toast("Selecciona primero el inspector (el factor de paso es personal) / 请先选择检查员");
+      const el = document.querySelector('[data-key="inspector"]');
+      if (el) el.scrollIntoView({behavior:"smooth", block:"center"});
+      return;
+    }
+    if (stepCount > 0 && !confirm("¿Reiniciar el conteo desde cero en un nuevo punto de referencia?\n\n是否从新的参考点重新计数？")) return;
+    stepRecentTimes = []; stepVelAlerts = 0; stepDudosoNow = false; stepOverSince = null; stepPrevT = null; stepMode = "conteo";
+    stepCount = 0; stepBaseline = null; stepInPeak = false; stepPendingConfirm = false; stepLastTs = -1e9; stepSensorOK = false;
     stepCounterActive = true; stepListening = false; stepSetupOK = false;
     updateStepCounterUI();
     const noteEl = document.getElementById("stepCounterPermNote");
@@ -712,11 +899,11 @@
     stepDebugMaxDelta = 0;
     if (stepDebugTimer) clearInterval(stepDebugTimer);
     stepDebugTimer = setInterval(updateStepDebugDisplay, 500);
-    toast("Conteo de pasos iniciado / 步数计数已开始");
+    toast("Conteo iniciado en: " + stepRefActual() + " / 计数已开始");
   }
 
   function stopStepCounter(){
-    stepCounterActive = false; stepListening = false;
+    stepCounterActive = false; stepListening = false; stepMode = null; stepDudosoNow = false;
     window.removeEventListener("devicemotion", handleDeviceMotion);
     updateStepCounterUI();
     const debugRow = document.getElementById("stepDebugRow");
@@ -742,6 +929,7 @@
     // se reinicia la línea base al reanudar -- la orientación/posición del
     // teléfono pudo cambiar mientras se manejaba para tomar la foto.
     stepBaseline = null; stepInPeak = false; stepPendingConfirm = false;
+    stepOverSince = null; stepPrevT = null; stepRecentTimes = []; stepDudosoNow = false; stepMode = "conteo";
     window.addEventListener("devicemotion", handleDeviceMotion);
     stepListening = true;
     updateStepCounterUI();
@@ -751,11 +939,31 @@
   function initStepCounter(){
     const savedFactor = localStorage.getItem("qaqc_step_factor");
     if (savedFactor) document.getElementById("stepFactorInput").value = savedFactor;
-    document.getElementById("stepFactorInput").addEventListener("input", (e) => {
-      localStorage.setItem("qaqc_step_factor", e.target.value);
+    // v3.4: el factor manual se guarda para el INSPECTOR seleccionado (validado); sin
+    // inspector se conserva el comportamiento anterior (factor del dispositivo).
+    document.getElementById("stepFactorInput").addEventListener("change", (e) => {
+      const v = parseFloat(e.target.value);
+      if (!(v >= PASOS_CFG.rangoFactor[0] && v <= PASOS_CFG.rangoFactor[1])){
+        toast("Factor entre " + PASOS_CFG.rangoFactor.join(" y ") + " m/paso / 系数范围");
+        updateStepCounterUI(); return;
+      }
+      if (stepInspector()) saveStepProfile({f: Math.round(v*100)/100, fecha: new Date().toISOString(), origen: "manual"});
+      else localStorage.setItem("qaqc_step_factor", String(v));
       updateStepCounterUI();
-      document.querySelectorAll('.item-row').forEach(row => row.dispatchEvent(new CustomEvent("qaqc:refreshdist")));
+      refreshAllItemDistances();
     });
+    const refSel = document.getElementById("stepRefSelect");
+    refSel.innerHTML = PASOS_CFG.puntosReferencia.map(p => `<option value="${esc(p)}">${esc(p)}</option>`).join("")
+      + '<option value="__otro">Otro (escribir) / 其他…</option>';
+    refSel.addEventListener("change", () => {
+      document.getElementById("stepRefOtro").hidden = refSel.value !== "__otro";
+      if (stepCount > 0) toast("Nuevo punto: toca 'Nuevo conteo' al pararte en él / 新参考点");
+    });
+    document.getElementById("btnCalibStart").addEventListener("click", calibStart);
+    document.getElementById("btnCalibEnd").addEventListener("click", calibEnd);
+    const inspEl = document.querySelector('[data-key="inspector"]');
+    if (inspEl) inspEl.addEventListener("change", () => { updateStepCounterUI(); refreshAllItemDistances(); });
+    document.querySelectorAll(".tab-btn").forEach(b => b.addEventListener("click", () => setTimeout(updateStepCounterUI, 0)));
     document.getElementById("btnStepStart").addEventListener("click", startStepCounter);
     document.getElementById("btnStepStop").addEventListener("click", stopStepCounter);
     document.getElementById("btnStepResume").addEventListener("click", resumeStepCounter);
@@ -850,12 +1058,14 @@
       const stepsInput = row.querySelector('[data-role="stepsinput"]');
       const distM = row.querySelector('[data-role="distm"]');
       function refreshDistDisplay(){
-        distM.textContent = state.steps ? "≈ " + fmtDist(state.steps) + " m" : "";
+        distM.textContent = state.steps ? "≈ " + fmtDist(state.steps) + " m desde " + (state.stepsRef || stepRefActual()) + (state.stepsDudoso ? " ⚠ dudoso" : "") : "";
         updateThumbCaption(row, state);
       }
       stepsInput.addEventListener("input", () => {
         state.steps = parseInt(stepsInput.value, 10) || 0;
         state.stepsManual = true;
+        state.stepsRef = state.stepsRef || stepRefActual();   // v3.4
+        state.stepsDudoso = false;                            // corregido a mano por el inspector
         refreshDistDisplay();
       });
       row.addEventListener("qaqc:refreshdist", refreshDistDisplay);
@@ -888,6 +1098,8 @@
           // inspector aún no corrigió el valor a mano.
           if (!state.stepsManual && (stepCounterActive || stepCount > 0)){
             state.steps = stepCount;
+            state.stepsRef = stepRefActual();          // v3.4
+            state.stepsDudoso = stepVelAlerts > 0;     // v3.4
             stepsInput.value = state.steps || "";
           }
           distRow.hidden = false;
@@ -1324,6 +1536,7 @@
         const s = itemState.find(x => x.uid === gi + "_" + ii);
         const distanceM = s.steps ? +(s.steps * getCalibrationFactor()).toFixed(1) : null;
         return {es: it.es, zh: it.zh, status:s.status, obs:s.obs, photo:s.photo, steps:s.steps||0, distanceM,
+                stepsRef: s.steps ? (s.stepsRef || "") : "", stepsDudoso: !!(s.steps && s.stepsDudoso),
                 measureCm: s.measureCm || null, measureLabel: s.measureLabel || ""};
       })
     }));
@@ -1340,7 +1553,9 @@
       totals: {total: itemState.length, answered: answered.length, cumple, noCumple, na, pct},
       signatures: Object.assign({}, sigState),
       capturedAt: nowStamp(),
-      appVersion: APP_VERSION
+      appVersion: APP_VERSION,
+      pasos: (function(){ const fi = stepFactorInfo();   // v3.4: resumen del contador
+        return {referencia: stepRefActual(), factor: fi.f, origenFactor: fi.origen, total: stepCount, alertasVelocidad: stepVelAlerts}; })()
     };
   }
 
@@ -1355,7 +1570,9 @@
         const distCaption = it.photo && it.steps ? `<div class="thumb-caption">📍≈${it.distanceM}m</div>` : "";
         const img = it.photo ? `<div class="detail-img-wrap">${distCaption}<img src="${it.photo}" alt="evidencia"></div>` : "";
         const obs = it.obs ? `<span class="dobs">${esc(it.obs)}</span>` : "";
-        const dist = it.steps ? `<span class="dobs">📍 ${it.steps} pasos ≈ ${it.distanceM} m desde el ingreso / 距入口约${it.distanceM}米</span>` : "";
+        const dist = it.steps ? (it.stepsRef
+          ? `<span class="dobs">📍 ${it.steps} pasos ≈ ${it.distanceM} m desde ${esc(it.stepsRef)} / 距参考点约${it.distanceM}米${it.stepsDudoso ? " ⚠ conteo dudoso / 计数可疑" : ""}</span>`
+          : `<span class="dobs">📍 ${it.steps} pasos ≈ ${it.distanceM} m desde el ingreso / 距入口约${it.distanceM}米</span>`) : "";
         const meas = it.measureCm ? `<span class="dobs">📏 ${it.measureLabel ? esc(it.measureLabel) + ": " : ""}≈ ${it.measureCm} cm / 约${it.measureCm}厘米</span>` : "";
         return `<div class="detail-item"><span class="pill ${pillClass}">${esc(pillTxt)}</span><span class="dtext">${esc(it.es)}${obs}${dist}${meas}</span>${img}</div>`;
       }).join("");
@@ -1414,10 +1631,12 @@
   }
 
   function resetForm(){
-    itemState.forEach(s => { s.status=""; s.obs=""; s.photo=""; s.steps=0; s.stepsManual=false; s.measureCm=null; s.measureLabel=""; });
+    itemState.forEach(s => { s.status=""; s.obs=""; s.photo=""; s.steps=0; s.stepsManual=false; s.stepsRef=""; s.stepsDudoso=false; s.measureCm=null; s.measureLabel=""; });
     closeMeasureModal();
     if (stepCounterActive) stopStepCounter();
     stepCount = 0; stepSetupOK = false; stepSensorOK = false;
+    stepVelAlerts = 0; stepDudosoNow = false; stepRecentTimes = []; stepMode = null; stepCalib = null;   // v3.4
+    { const rs = document.getElementById("stepRefSelect"); if (rs){ rs.selectedIndex = 0; document.getElementById("stepRefOtro").value = ""; document.getElementById("stepRefOtro").hidden = true; } }
     updateStepCounterUI();
     const permNote = document.getElementById("stepCounterPermNote");
     if (permNote){ permNote.hidden = true; permNote.classList.remove("perm-warn"); }
@@ -1768,7 +1987,7 @@
   function buildHallazgosRows(recs){
     const header = ["ID Hallazgo","ID Registro","Fecha","Labor (panel)","Turno","Guardia","Inspector",
                      "Grupo","Estandar (No Cumple)","标准 (不符合)","Observacion","Foto","Estado cierre",
-                     "Pasos desde ingreso","Distancia estimada (m)","Medida en foto (cm)","Que se midio","Version app"];
+                     "Pasos desde ingreso","Distancia estimada (m)","Medida en foto (cm)","Que se midio","Version app","Punto de referencia","Conteo dudoso"];
     const rows = [header];
     let seq = 0;
     const hallazgosConFoto = [];
@@ -1783,7 +2002,9 @@
                        it.photo ? "FOTO_ADJUNTA" : "Sin foto", "PENDIENTE",
                        it.steps || "", it.distanceM == null ? "" : it.distanceM,
                        it.measureCm == null ? "" : it.measureCm, it.measureLabel || "",
-                       rec.appVersion || "anterior a 3.1"]);
+                       rec.appVersion || "anterior a 3.1",
+                       it.steps ? (it.stepsRef || "Ingreso (versión anterior)") : "",
+                       it.steps ? (it.stepsDudoso ? "SI" : "NO") : ""]);
             if (it.photo) hallazgosConFoto.push({ncId, foto: it.photo, rowIdx: rows.length-1});
           }
         });
@@ -2057,7 +2278,9 @@
         let obsLines = [];
         if (it.obs){ setEs(8); obsLines = doc.splitTextToSize("Obs / 备注: " + it.obs, CW-32); }
         let distLines = [];
-        if (it.steps){ setEs(8); distLines = doc.splitTextToSize(`Distancia desde el ingreso / 距入口距离: ${it.steps} pasos ~= ${it.distanceM} m`, CW-32); }
+        if (it.steps){ setEs(8); distLines = doc.splitTextToSize(it.stepsRef
+          ? `Distancia desde ${it.stepsRef} / 距参考点距离: ${it.steps} pasos ~= ${it.distanceM} m${it.stepsDudoso ? " (conteo dudoso / 计数可疑)" : ""}`
+          : `Distancia desde el ingreso / 距入口距离: ${it.steps} pasos ~= ${it.distanceM} m`, CW-32); }
         let measLines = [];
         if (it.measureCm){ setEs(8); measLines = doc.splitTextToSize(`Medida en la foto / 照片测量: ${it.measureLabel ? it.measureLabel + " " : ""}~= ${it.measureCm} cm`, CW-32); }
 
